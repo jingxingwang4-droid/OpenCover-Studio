@@ -5,13 +5,15 @@ import json
 import shutil
 from pathlib import Path
 
+import yaml
+
 from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
-    QCheckBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QCheckBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QInputDialog,
     QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QStackedWidget,
-    QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget, QProgressBar,
 )
 
 from opencover import __version__
@@ -437,13 +439,78 @@ class HistoryPage(QWidget):
 
 
 class ComponentPage(QWidget):
-    def __init__(self, paths: AppPaths):
+    def __init__(self, paths: AppPaths, jobs: JobManager, database: Database):
         super().__init__(); self.paths = paths; page, layout = panel_layout("组件管理", "仅通过本机文件和真实 smoke test 判定状态；不会执行下载包内的未知脚本。")
+        self.jobs = jobs; self.database = database; self.active_job: str | None = None
         QVBoxLayout(self).addWidget(page); self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(["组件", "状态", "版本", "说明"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch); self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.table, 1); actions = QHBoxLayout(); refresh = QPushButton("重新检测"); open_folder = QPushButton("打开组件目录"); sources = QPushButton("查看资源与许可证")
+        layout.addWidget(self.table, 1)
+        self.download_status = QLabel("可从已核验资源清单下载；安装后仍须通过上方 smoke test 才会显示为可用。")
+        self.download_status.setWordWrap(True); self.download_progress = QProgressBar(); self.download_progress.setRange(0, 100); self.download_progress.setValue(0)
+        layout.addWidget(self.download_status); layout.addWidget(self.download_progress)
+        actions = QHBoxLayout(); refresh = QPushButton("重新检测"); install = QPushButton("下载并安装资源"); download = QPushButton("仅下载到缓存"); cancel = QPushButton("取消下载"); open_folder = QPushButton("打开组件目录"); sources = QPushButton("查看资源与许可证")
         refresh.clicked.connect(self.refresh); open_folder.clicked.connect(lambda: QDesktopServices.openUrl(Path(paths.external_backends).as_uri())); sources.clicked.connect(lambda: QDesktopServices.openUrl((paths.root / "RESOURCE_SOURCES.md").as_uri()))
-        actions.addWidget(refresh); actions.addWidget(open_folder); actions.addWidget(sources); actions.addStretch(); layout.addLayout(actions); self.refresh()
+        install.clicked.connect(lambda: self.start_resource(True)); download.clicked.connect(lambda: self.start_resource(False)); cancel.clicked.connect(self.cancel_resource)
+        actions.addWidget(refresh); actions.addWidget(install); actions.addWidget(download); actions.addWidget(cancel); actions.addWidget(open_folder); actions.addWidget(sources); actions.addStretch(); layout.addLayout(actions)
+        jobs.event.connect(self.on_job_event); jobs.finished.connect(self.on_job_finished); self.refresh()
+
+    def _resources(self) -> list[dict[str, object]]:
+        try:
+            data = yaml.safe_load((self.paths.config / "resource_manifest.yaml").read_text(encoding="utf-8"))
+            excluded = {"voice_model", "preview_source_audio", "test_audio"}
+            return [item for item in data["resources"] if item.get("download_url") and item.get("type") not in excluded]
+        except (OSError, KeyError, TypeError, yaml.YAMLError):
+            return []
+
+    def start_resource(self, install: bool) -> None:
+        if self.active_job and self.active_job in self.jobs.processes:
+            QMessageBox.information(self, "已有下载任务", "请等待当前资源任务完成或先取消。")
+            return
+        resources = self._resources()
+        if not resources:
+            QMessageBox.warning(self, "资源清单不可用", "没有可下载且经过核验的组件资源。")
+            return
+        labels = [f"{item['name']}  ·  {float(item.get('file_size') or 0) / 1024**2:.1f} MiB" for item in resources]
+        selected, accepted = QInputDialog.getItem(self, "选择组件资源", "资源（下载不等于后端已可运行）：", labels, 0, False)
+        if not accepted:
+            return
+        item = resources[labels.index(selected)]
+        permission = "允许再分发" if item.get("redistribution_allowed") else "仅本机下载/权利需自行确认"
+        detail = (
+            f"名称：{item['name']}\n许可证：{item.get('license') or '未明确'}\n权利：{permission}\n"
+            f"目标：{item['install_directory']}\n来源：{item.get('source_page') or item['download_url']}\n\n"
+            + ("将校验 SHA256 后安全安装；不会执行包内脚本。" if install else "只下载到 downloads 缓存，不安装。")
+        )
+        if QMessageBox.question(self, "确认资源任务", detail) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.active_job = self.jobs.submit_resource(str(item["resource_id"]), install=install)
+        except Exception as exc:
+            self.active_job = None; QMessageBox.critical(self, "无法启动下载", str(exc)); return
+        self.download_progress.setValue(0); self.download_status.setText(f"任务 {self.active_job[:8]} 已启动：{item['name']}")
+
+    def cancel_resource(self) -> None:
+        if self.active_job:
+            self.jobs.cancel(self.active_job)
+
+    def on_job_event(self, job_id: str, event: object) -> None:
+        if job_id != self.active_job:
+            return
+        message = getattr(event, "message", None)
+        value = getattr(event, "value", None)
+        if message:
+            self.download_status.setText(str(message))
+        if value is not None:
+            self.download_progress.setValue(int(value))
+
+    def on_job_finished(self, job_id: str, success: bool) -> None:
+        if job_id != self.active_job:
+            return
+        job = self.database.get_job(job_id); self.active_job = None; self.refresh()
+        if success:
+            self.download_status.setText(f"资源任务完成：{job.get('output_path') if job else ''}")
+        else:
+            self.download_status.setText(f"资源任务未完成：{job.get('error') if job else '未知错误'}")
 
     def refresh(self) -> None:
         ffmpeg = ffmpeg_path(self.paths.root)
@@ -504,7 +571,7 @@ class MainWindow(QMainWindow):
         voices.edit_requested.connect(self.edit_voice)
         history.cancel_requested.connect(self.jobs.cancel); self.jobs.event.connect(lambda job_id, event: history.refresh())
         self.jobs.finished.connect(self._job_finished)
-        pages = {"首页": home, "原词翻唱": cover, "改词翻唱 Beta": lyric, "音色管理": voices, "任务记录": history, "组件管理": ComponentPage(self.paths), "设置": SettingsPage(self.app_settings, self.hardware)}
+        pages = {"首页": home, "原词翻唱": cover, "改词翻唱 Beta": lyric, "音色管理": voices, "任务记录": history, "组件管理": ComponentPage(self.paths, self.jobs, self.database), "设置": SettingsPage(self.app_settings, self.hardware)}
         for name, page in pages.items(): self.pages[name] = page; self.stack.addWidget(page)
 
     def navigate(self, name: str) -> None:

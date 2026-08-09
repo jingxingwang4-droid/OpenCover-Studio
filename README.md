@@ -39,11 +39,11 @@ python -m venv .venv
 
 构建脚本生成 windowed GUI 和独立 `OpenCoverStudioWorker.exe`。Qt 以 `CREATE_NO_WINDOW` 启动 worker，因此没有可见终端，同时保留 UTF-8 JSON Lines 进度、SQLite 状态和进程树取消。公开 Modern/Legacy 阶段包含 GUI、worker、顶层 assets/config、FFmpeg 与 CC0 试听源；受限制权重不进入公开包。
 
-`./scripts/build_local_full.ps1 Modern` 另可在 `release_private/` 组装当前机器专用的 22.75 GiB 完整目录；它包含不可再分发的社区模型、Vevo2 和绑定本机解释器路径的虚拟环境，必须遵守 `LOCAL_ONLY_FULL_PACKAGE.txt`，不能公开上传。该私有包已完成打包 worker 端到端改词和取消测试。Legacy 尚无实体旧显卡/CUDA 11.8 验收，不宣称已兼容。
+`./scripts/build_local_full.ps1 Modern` 另可在 `release_private/` 组装当前机器专用的 22.76 GiB 完整目录；它包含不可再分发的社区模型、Vevo2 和绑定本机解释器路径的虚拟环境，必须遵守 `LOCAL_ONLY_FULL_PACKAGE.txt`，不能公开上传。该私有包已完成打包 worker 端到端改词和取消测试。Legacy 尚无实体旧显卡/CUDA 11.8 验收，不宣称已兼容。
 
 ## 安全与版权
 
 - 原创代码采用 MIT；Qt/PySide6、FFmpeg、后端、模型、权重、音频和图片各自遵守其许可证。
 - 模型导入计算 SHA256、拒绝重复和覆盖，不执行模型目录中的脚本。
-- 下载器拒绝 HTML 冒充文件，并防御路径穿越和异常压缩比。
+- 组件页现可从核验清单启动独立下载 worker，支持断点、自动重试、速度/进度、取消、缓存复用、大小与 SHA256 校验。安装器拒绝 HTML 冒充文件、路径穿越、符号链接、异常压缩比、越界和覆盖已有文件；下载成功不等于后端可用，界面仍以真实 smoke test 为准。
 - 请仅使用得到授权的歌曲、模型、角色素材和训练数据。

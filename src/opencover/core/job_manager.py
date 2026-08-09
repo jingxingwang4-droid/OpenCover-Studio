@@ -58,6 +58,15 @@ class JobManager(QObject):
         record = {"id": job_id, "kind": "lyric", **payload}
         return self._submit(record, "opencover.workers.lyric_cover_worker")
 
+    def submit_resource(self, resource_id: str, *, install: bool = True) -> str:
+        job_id = uuid.uuid4().hex
+        record = {
+            "id": job_id, "kind": "resource", "root": str(self.root),
+            "input_path": resource_id, "engine": "resource", "model_id": resource_id,
+            "options": {"install": install},
+        }
+        return self._submit(record, "opencover.workers.resource_worker")
+
     def _submit(self, record: dict[str, object], source_module: str) -> str:
         job_id = str(record["id"])
         self.database.create_job(record)

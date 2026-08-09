@@ -7,7 +7,7 @@
 - MSST/RVC 为 PyTorch 2.9.1+cu130；DDSP 为独立 Python 3.11.5、PyTorch/torchaudio 2.9.1+cu130；三者 CUDA tensor smoke test 均通过。
 - FFmpeg 9.0 essentials build。
 - 应用启动时调用后端 PyTorch 真实执行 CUDA FP16 tensor 运算：`cuda_smoke=True`、`fp16_supported=True`；Windows `GlobalMemoryStatusEx` 检出 31.4 GB RAM，本轮最终磁盘可用空间为 824.3 GB。
-- `.venv\Scripts\python.exe -m pytest -q`：`24 passed`。新增覆盖歌词编码/LRC/密度限制、Vevo2 完整状态、短句拼接、模型哈希缓存、DDSP `config.yaml` 导入规则、后端 UTF-8/GBK 错误透传、音色元数据编辑和删除。
+- `.venv\Scripts\python.exe -m pytest -q`：`27 passed`。新增覆盖歌词编码/LRC/密度限制、Vevo2 完整状态、短句拼接、模型哈希缓存、DDSP `config.yaml` 导入规则、后端 UTF-8/GBK 错误透传、音色元数据编辑和删除，以及资源安装越界/覆盖/ZIP 符号链接防护。
 
 ## MSST
 
@@ -47,7 +47,7 @@
 - 导入无试听模型后会提交独立 preview worker；音色卡已有试听时使用 Qt Multimedia 播放，无试听时显示并启用“生成试听”。
 - 已修复 `MainWindow` 向 `JobManager` 传入 `AppPaths` 而非根 `Path` 导致按钮任务崩溃的问题。
 - Modern/Legacy 都按 PyInstaller `--windowed --onedir` 构建；公开包不包含用户测试歌和未获再分发授权的后端/角色权重。
-- 最终重建后两目录均为 641.3 MiB/465 文件；CC0 `neutral_melody.wav` 存在，`assets/audio/春日影.wav` 不存在，weights/backend 文件计数均为 0。Modern、Legacy 与本机完整包三个 EXE 分别启动 8 秒仍存活。
+- 最终重建后两目录均为 641.7 MiB/465 文件；CC0 `neutral_melody.wav` 存在，`assets/audio/春日影.wav` 不存在，weights/backend 文件计数均为 0。Modern、Legacy 与本机完整包三个 EXE 分别启动 8 秒仍存活。
 - 两个公开包的 `OpenCoverStudioWorker.exe` 无参数协议 smoke 均返回退出码 2、合法 UTF-8 JSON `BAD_ARGUMENTS`，stderr 为 0 bytes，证明冻结 worker 可启动且不会静默挂起。
 - 以系统 `python.exe app.py` 模拟双击：launcher 正常退出并产生 1 个新的项目 `pythonw.exe` GUI 进程，随后只终止该测试进程。
 
@@ -58,8 +58,8 @@
 - GAME：源码 commit `4ad815c90dfe2442730f3fdc866fd23e737cbc97`，官方 v1.0 small ZIP SHA256 `3d3e1ac0...c576`。对《春日影》30 秒分离人声用日语条件、CUDA 16-bit AMP 提取成功；MIDI SHA256 `c6dfeffb...8d3e`，TXT `733bc418...0043`，CSV `495cc9b7...798f`。
 - GAME 首次在结果全部保存后因 Rich 向 GBK 终端输出 `•` 而 teardown 失败；设置 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 后相同推理退出码 0。
 - 源码 worker 端到端 MSST→Vevo2→祥子 RVC→时长校正→混音成功；9.008 秒双声道输出 SHA256 `8271ac4c...97de3`。
-- 最初复用 windowed GUI EXE 作为 worker 时无 stdout 且卡住，已替换为 64,871,235-byte console-subsystem `OpenCoverStudioWorker.exe`；Qt 使用 `CREATE_NO_WINDOW` 隐藏启动。
-- `Modern-LocalFull` 为 22.75 GiB。其专用 worker 首次真实全链耗时 114 秒、退出码 0，输出 SHA256 `41f0bb4c...9143`，9.008 秒/44.1 kHz/双声道、RMS 0.05142、finite=True。
+- 最初复用 windowed GUI EXE 作为 worker 时无 stdout 且卡住，已替换为约 65.30 MB 的 console-subsystem `OpenCoverStudioWorker.exe`；Qt 使用 `CREATE_NO_WINDOW` 隐藏启动。Modern/Legacy 冻结 worker 的资源缓存任务均退出 0、产生 result、stderr 为 0 bytes。
+- `Modern-LocalFull` 为 22.76 GiB。其专用 worker 首次真实全链耗时 114 秒、退出码 0，输出 SHA256 `41f0bb4c...9143`，9.008 秒/44.1 kHz/双声道、RMS 0.05142、finite=True。
 - Qt JobManager 从该 worker 收到完整 UTF-8 JSON Lines，并将含中文的真实输出路径逐字写入 SQLite。Vevo2 `generate` 阶段在进度 40% 取消后状态为 `cancelled`、无输出，进程树检查 `orphan_count=0`。
 
 ## 未通过/未执行
