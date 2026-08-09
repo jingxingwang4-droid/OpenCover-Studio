@@ -119,7 +119,6 @@ class VoiceCard(QFrame):
         text.addWidget(tag)
         buttons = QVBoxLayout()
         preview = QPushButton("试听" if model.preview else "生成试听")
-        preview.setEnabled(bool(model.preview))
         choose = QPushButton("选择")
         choose.setObjectName("Primary")
         preview.clicked.connect(lambda: self.preview_requested.emit(model.id))

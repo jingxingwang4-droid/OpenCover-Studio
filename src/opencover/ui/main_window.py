@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from opencover import __version__
-from opencover.adapters.backends import DDSPAdapter, MSSTAdapter, RVCAdapter
+from opencover.adapters.backends import DDSPAdapter, MSSTAdapter, MarkerBackendAdapter, RVCAdapter
 from opencover.config import Settings
 from opencover.core.hardware_detector import HardwareInfo
 from opencover.core.job_manager import JobManager
@@ -133,6 +133,7 @@ class LyricPage(QWidget):
 
 class ImportVoiceDialog(QDialog):
     imported = Signal()
+    preview_requested = Signal(str)
 
     def __init__(self, importer: ModelImporter, parent: QWidget | None = None):
         super().__init__(parent); self.importer = importer; self.setWindowTitle("导入音色"); self.resize(560, 440)
@@ -162,21 +163,27 @@ class ImportVoiceDialog(QDialog):
         try:
             if not self.name.text().strip(): raise ValueError("请填写名称")
             opt = lambda field: Path(field.text()) if field.text().strip() else None
-            self.importer.import_model(engine=self.engine.currentText().lower(), weight=Path(self.weight.text()),
+            model = self.importer.import_model(engine=self.engine.currentText().lower(), weight=Path(self.weight.text()),
                 display_name=self.name.text(), description=self.description.text(), index_or_config=opt(self.extra),
                 avatar=opt(self.avatar), preview=opt(self.preview))
         except Exception as exc: QMessageBox.critical(self, "导入失败", str(exc)); return
-        self.imported.emit(); self.accept()
+        self.imported.emit()
+        if not model.preview:
+            self.preview_requested.emit(model.id)
+        self.accept()
 
 
 class VoiceManagerPage(QWidget):
     import_requested = Signal()
+    generate_requested = Signal(str)
+    model_selected = Signal(str, str)
     def __init__(self, registry: ModelRegistry):
         super().__init__(); self.registry = registry; page, layout = panel_layout("音色管理", "音色按 RVC / DDSP 分开显示；元数据与权重文件分离保存。")
         QVBoxLayout(self).addWidget(page); tools = QHBoxLayout(); self.engine = QComboBox(); self.engine.addItems(["RVC", "DDSP"])
         self.search = QLineEdit(); self.search.setPlaceholderText("搜索音色"); add = QPushButton("导入音色"); add.setObjectName("Primary")
         tools.addWidget(self.engine); tools.addWidget(self.search, 1); tools.addWidget(add); layout.addLayout(tools)
         self.scroll = QScrollArea(); self.scroll.setWidgetResizable(True); layout.addWidget(self.scroll, 1)
+        self.player = AudioPlayer(); layout.addWidget(self.player)
         self.engine.currentTextChanged.connect(self.refresh); self.search.textChanged.connect(self.refresh); add.clicked.connect(self.import_requested); self.refresh()
     def refresh(self) -> None:
         host = QWidget(); column = QVBoxLayout(host); needle = self.search.text().casefold()
@@ -194,8 +201,22 @@ class VoiceManagerPage(QWidget):
                 disabled = QPushButton("模型未安装"); disabled.setEnabled(False)
                 row.addWidget(avatar); row.addLayout(text, 1); row.addWidget(disabled); column.addWidget(pending)
             column.addWidget(QLabel("点击“导入音色”添加得到授权的模型。祥子头像素材不代表模型已安装。"))
-        for model in models: column.addWidget(VoiceCard(model, model.directory(self.registry.weights_root)))
+        for model in models:
+            directory = model.directory(self.registry.weights_root)
+            card = VoiceCard(model, directory)
+            card.preview_requested.connect(lambda model_id, m=model, d=directory: self._preview(m, d))
+            card.selected.connect(lambda model_id, engine=model.engine: self.model_selected.emit(engine, model_id))
+            column.addWidget(card)
         column.addStretch(); self.scroll.setWidget(host)
+
+    def _preview(self, model, directory: Path) -> None:  # type: ignore[no-untyped-def]
+        path = directory / model.preview if model.preview else None
+        if path and path.is_file():
+            self.player.set_source(path)
+            self.player.player.play()
+            self.player.play.setText("暂停")
+        else:
+            self.generate_requested.emit(model.id)
 
 
 class HistoryPage(QWidget):
@@ -217,10 +238,15 @@ class ComponentPage(QWidget):
         QVBoxLayout(self).addWidget(page); self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(["组件", "状态", "版本", "说明"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch); self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         statuses = [MSSTAdapter(paths.external_backends / "msst").status(), RVCAdapter(paths.external_backends / "rvc").status(), DDSPAdapter(paths.external_backends / "ddsp").status()]
-        statuses += [type("S", (), {"name": "Vevo2", "installed": False, "version": "未安装", "detail": "Modern 扩展，尚未验证"})(), type("S", (), {"name": "GAME + DiffSinger", "installed": False, "version": "未安装", "detail": "条件备用链路，尚未验证"})()]
+        statuses += [
+            MarkerBackendAdapter(paths.external_backends / "vevo2", "vevo2", "Vevo2").status(),
+            MarkerBackendAdapter(paths.external_backends / "game", "game", "GAME").status(),
+            MarkerBackendAdapter(paths.external_backends / "diffsinger", "diffsinger", "DiffSinger").status(),
+        ]
         self.table.setRowCount(len(statuses))
         for r, item in enumerate(statuses):
-            for c, value in enumerate([item.name, "已安装" if item.installed else "未安装", item.version, item.detail]): self.table.setItem(r, c, QTableWidgetItem(str(value)))
+            state = "可用" if item.runnable else ("未就绪" if item.installed else "未安装")
+            for c, value in enumerate([item.name, state, item.version, item.detail]): self.table.setItem(r, c, QTableWidgetItem(str(value)))
         layout.addWidget(self.table, 1); open_folder = QPushButton("打开组件目录"); open_folder.clicked.connect(lambda: QDesktopServices.openUrl(Path(paths.external_backends).as_uri())); layout.addWidget(open_folder)
 
 
@@ -235,7 +261,7 @@ class SettingsPage(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, paths: AppPaths, settings: Settings, hardware: HardwareInfo, database: Database):
         super().__init__(); self.paths = paths; self.app_settings = settings; self.hardware = hardware; self.database = database
-        self.registry = ModelRegistry(paths.weights); self.importer = ModelImporter(paths.weights); self.jobs = JobManager(database, paths, self)
+        self.registry = ModelRegistry(paths.weights); self.importer = ModelImporter(paths.weights); self.jobs = JobManager(database, paths.root, self)
         self.setWindowTitle("OpenCover Studio"); self.setMinimumSize(900, 620); self.resize(settings.window_width, settings.window_height)
         root = QWidget(); root.setObjectName("Root"); self.setCentralWidget(root); shell = QHBoxLayout(root); shell.setContentsMargins(0, 0, 0, 0); shell.setSpacing(0)
         sidebar = QFrame(); sidebar.setObjectName("Sidebar"); sidebar.setFixedWidth(204); nav = QVBoxLayout(sidebar); nav.setContentsMargins(0, 0, 0, 0)
@@ -262,6 +288,8 @@ class MainWindow(QMainWindow):
     def _add_pages(self) -> None:
         home = HomePage(self.hardware); cover = CoverPage(self.registry); voices = VoiceManagerPage(self.registry); history = HistoryPage(self.database)
         home.navigate.connect(self.navigate); home.import_requested.connect(self.import_voice); cover.import_requested.connect(self.import_voice); cover.start_requested.connect(self.start_job); voices.import_requested.connect(self.import_voice)
+        voices.generate_requested.connect(self.start_preview_job); voices.model_selected.connect(self.select_model)
+        self.jobs.finished.connect(self._job_finished)
         pages = {"首页": home, "原词翻唱": cover, "改词翻唱 Beta": LyricPage(), "音色管理": voices, "任务记录": history, "组件管理": ComponentPage(self.paths), "设置": SettingsPage(self.app_settings, self.hardware)}
         for name, page in pages.items(): self.pages[name] = page; self.stack.addWidget(page)
 
@@ -269,7 +297,10 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.pages[name]); [button.setChecked(key == name) for key, button in self.nav_buttons.items()]; self.app_settings.last_page = name
 
     def import_voice(self) -> None:
-        dialog = ImportVoiceDialog(self.importer, self); dialog.imported.connect(self._models_changed); dialog.exec()
+        dialog = ImportVoiceDialog(self.importer, self)
+        dialog.imported.connect(self._models_changed)
+        dialog.preview_requested.connect(self.start_preview_job)
+        dialog.exec()
 
     def _models_changed(self) -> None:
         page = self.pages["原词翻唱"]
@@ -285,6 +316,38 @@ class MainWindow(QMainWindow):
         if not self.hardware.ffmpeg: missing.append("FFmpeg 未安装")
         if missing: QMessageBox.warning(self, "组件尚未就绪", "无法开始真实推理：\n\n" + "\n".join(f"• {item}" for item in missing) + "\n\n请在“组件管理”查看真实状态。"); return
         payload["root"] = str(self.paths.root); job_id = self.jobs.submit_original(payload); QMessageBox.information(self, "任务已创建", f"任务 {job_id[:8]} 已在独立进程启动。"); self.navigate("任务记录")
+
+    def start_preview_job(self, model_id: str) -> None:
+        model = self.registry.get(model_id)
+        if model is None:
+            QMessageBox.warning(self, "无法生成试听", "找不到所选音色。")
+            return
+        adapter = RVCAdapter(self.paths.external_backends / "rvc") if model.engine == "rvc" else DDSPAdapter(self.paths.external_backends / "ddsp")
+        if not adapter.status().runnable:
+            QMessageBox.warning(self, "无法生成试听", adapter.status().detail)
+            return
+        try:
+            job_id = self.jobs.submit_preview(model_id)
+        except Exception as exc:
+            QMessageBox.critical(self, "无法生成试听", str(exc))
+            return
+        QMessageBox.information(self, "试听任务已创建", f"任务 {job_id[:8]} 正在后台使用真实模型生成试听。")
+
+    def select_model(self, engine: str, model_id: str) -> None:
+        page = self.pages.get("原词翻唱")
+        if not isinstance(page, CoverPage):
+            return
+        page.engine.setCurrentText(engine.upper())
+        index = page.voice.findData(model_id)
+        if index >= 0:
+            page.voice.setCurrentIndex(index)
+        self.navigate("原词翻唱")
+
+    def _job_finished(self, job_id: str, success: bool) -> None:
+        self._models_changed()
+        history = self.pages.get("任务记录")
+        if isinstance(history, HistoryPage):
+            history.refresh()
 
     def _tray(self) -> None:
         self.tray = QSystemTrayIcon(self); self.tray.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_MediaVolume)); menu = self.tray.contextMenu() or None

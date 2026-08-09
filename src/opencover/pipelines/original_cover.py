@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -23,6 +24,17 @@ class CoverRequest:
 def cache_key(request: CoverRequest) -> str:
     stat = request.input_path.stat()
     data = f"{request.input_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}:{request.engine}:{request.voice.id}:{request.pitch}"
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+
+def separation_cache_key(request: CoverRequest, checkpoint: Path) -> str:
+    """A source-separation key intentionally independent of voice and engine."""
+    source_stat = request.input_path.stat()
+    model_stat = checkpoint.stat()
+    data = (
+        f"{request.input_path.resolve()}:{source_stat.st_size}:{source_stat.st_mtime_ns}:"
+        f"{checkpoint.resolve()}:{model_stat.st_size}:{model_stat.st_mtime_ns}"
+    )
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
@@ -49,6 +61,10 @@ class OriginalCoverPipeline:
         model_dir = request.voice.directory(self.root / "weights")
         if not all((model_dir / file).is_file() for file in request.voice.model_files):
             issues.append("音色权重缺失")
+        if request.engine == "rvc" and not all((model_dir / file).is_file() for file in request.voice.index_files):
+            issues.append("RVC 索引文件缺失")
+        if request.engine == "ddsp" and not all((model_dir / file).is_file() for file in request.voice.config_files):
+            issues.append("DDSP 配置文件缺失")
         return issues
 
     def run(
@@ -70,24 +86,39 @@ class OriginalCoverPipeline:
             report("export", 100, "已使用缓存结果")
             return output
 
-        normalized_dir = job_dir / "normalized"
-        normalized = normalized_dir / "input.wav"
-        report("normalize", 8, "正在标准化音频")
-        normalize_input(request.input_path, normalized, ffmpeg)
+        checkpoint = self.root / "external_backends" / "msst" / "models" / "model_vocals_mdx23c_sdr_10.17.ckpt"
+        shared_separation = self.root / "workspace" / "cache" / "separation" / separation_cache_key(request, checkpoint)
+        cached_vocals = shared_separation / "vocals.wav"
+        cached_accompaniment = shared_separation / "other.wav"
+        if all(path.is_file() and path.stat().st_size > 1024 for path in (cached_vocals, cached_accompaniment)):
+            report("normalize", 8, "已复用标准化与分离缓存")
+            report("separate", 20, "已复用人声与伴奏缓存")
+            vocals, accompaniment = cached_vocals, cached_accompaniment
+        else:
+            normalized_dir = job_dir / "normalized"
+            normalized = normalized_dir / "input.wav"
+            report("normalize", 8, "正在标准化音频")
+            normalize_input(request.input_path, normalized, ffmpeg)
 
-        separation_dir = job_dir / "separation"
-        report("separate", 20, "正在分离人声与伴奏")
-        self.msst.separate(
-            normalized_dir,
-            separation_dir,
-            "mdx23c",
-            self.root / "external_backends" / "msst" / "models" / "config_vocals_mdx23c.yaml",
-            self.root / "external_backends" / "msst" / "models" / "model_vocals_mdx23c_sdr_10.17.ckpt",
-        )
-        vocals = next(separation_dir.rglob("vocals.wav"), None)
-        accompaniment = next(separation_dir.rglob("other.wav"), None)
-        if vocals is None or accompaniment is None:
-            raise RuntimeError("MSST 未生成预期的 vocals.wav / other.wav")
+            separation_dir = job_dir / "separation"
+            report("separate", 20, "正在分离人声与伴奏")
+            self.msst.separate(
+                normalized_dir,
+                separation_dir,
+                "mdx23c",
+                self.root / "external_backends" / "msst" / "models" / "config_vocals_mdx23c.yaml",
+                checkpoint,
+            )
+            vocals = next(separation_dir.rglob("vocals.wav"), None)
+            accompaniment = next(separation_dir.rglob("other.wav"), None)
+            if vocals is None or accompaniment is None:
+                raise RuntimeError("MSST 未生成预期的 vocals.wav / other.wav")
+            shared_separation.mkdir(parents=True, exist_ok=True)
+            for source, target in ((vocals, cached_vocals), (accompaniment, cached_accompaniment)):
+                partial = target.with_suffix(target.suffix + ".part")
+                shutil.copy2(source, partial)
+                partial.replace(target)
+            vocals, accompaniment = cached_vocals, cached_accompaniment
 
         model_dir = request.voice.directory(self.root / "weights")
         model = model_dir / request.voice.model_files[0]

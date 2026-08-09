@@ -10,6 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QProcess, Signal
 
 from opencover.storage.database import Database
+from opencover.models.registry import ModelRegistry
 from .worker_protocol import WorkerEvent
 
 LOG = logging.getLogger(__name__)
@@ -29,6 +30,29 @@ class JobManager(QObject):
     def submit_original(self, payload: dict[str, object]) -> str:
         job_id = uuid.uuid4().hex
         record = {"id": job_id, "kind": "original", **payload}
+        return self._submit(record, "opencover.workers.original_cover_worker")
+
+    def submit_preview(self, model_id: str) -> str:
+        model = ModelRegistry(self.root / "weights").get(model_id)
+        if model is None:
+            raise ValueError("找不到所选音色")
+        source = self.root / "assets" / "preview_sources" / "neutral_melody.wav"
+        if not source.is_file():
+            raise FileNotFoundError("标准试听干声未安装")
+        job_id = uuid.uuid4().hex
+        record = {
+            "id": job_id,
+            "kind": "preview",
+            "root": str(self.root),
+            "input_path": str(source),
+            "engine": model.engine,
+            "model_id": model.id,
+            "options": {},
+        }
+        return self._submit(record, "opencover.workers.preview_worker")
+
+    def _submit(self, record: dict[str, object], source_module: str) -> str:
+        job_id = str(record["id"])
         self.database.create_job(record)
         job_dir = self.root / "workspace" / "jobs" / job_id
         job_dir.mkdir(parents=True, exist_ok=False)
@@ -50,7 +74,7 @@ class JobManager(QObject):
         if getattr(sys, "frozen", False):
             process.start(sys.executable, ["--worker", str(request_path)])
         else:
-            process.start(sys.executable, ["-m", "opencover.workers.original_cover_worker", str(request_path)])
+            process.start(sys.executable, ["-m", source_module, str(request_path)])
         return job_id
 
     def cancel(self, job_id: str) -> None:

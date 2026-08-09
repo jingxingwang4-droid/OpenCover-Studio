@@ -16,4 +16,5 @@ def test_main_window_constructs(qtbot, tmp_path: Path) -> None:  # type: ignore[
     window = MainWindow(paths, Settings(), hardware, Database(paths.workspace / "db.sqlite"))
     qtbot.addWidget(window)
     assert window.windowTitle() == "OpenCover Studio"
+    assert window.jobs.root == tmp_path
     assert set(window.pages) == {"首页", "原词翻唱", "改词翻唱 Beta", "音色管理", "任务记录", "组件管理", "设置"}

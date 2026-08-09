@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -39,7 +40,11 @@ def dispatch() -> int:
     if _restart_in_project_environment():
         return 0
     if len(sys.argv) == 3 and sys.argv[1] == "--worker":
-        from opencover.workers.original_cover_worker import main as worker_main
+        request = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+        if request.get("kind") == "preview":
+            from opencover.workers.preview_worker import main as worker_main
+        else:
+            from opencover.workers.original_cover_worker import main as worker_main
 
         return worker_main(sys.argv[2])
     from opencover.ui.application import main

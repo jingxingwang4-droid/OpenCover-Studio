@@ -1,19 +1,21 @@
 # OpenCover Studio v0.1.0 阶段交付报告
 
-1. GUI：首页、原词翻唱、改词翻唱 Beta、音色管理、任务记录、组件管理、设置，共七页。
-2. 启动：`app.py` 双击会自动转交项目 `pythonw.exe`；Modern/Legacy 为 `--windowed --onedir` EXE，无用户可见终端。
-3. 已下载后端：MSST `e247dfe...`、RVC CLI `7b284a6...`、Fairseq `ff08af2...`、DDSP-SVC `2e2ac5...`；均来自官方 GitHub。
-4. MSST：官方 v1.0.0 MDX23C vocals SDR 10.17 已校验并在 RTX 5070 Ti 上完成公共领域样例和《春日影》全曲真实分离。
-5. RVC：官方 HuBERT/RMVPE 与官方模型仓库演示音色已校验；《春日影》分离人声 30 秒真实推理成功。该音色只作 smoke test，不是祥子音色、不随包再分发。
-6. DDSP：源码已锁定，但运行环境、普通测试模型和真实 WAV 尚未全部验证，GUI 保持不可用。
-7. 初始音色/试听：无可再分发的正式内置音色；没有用测试模型冒充内置音色。用户可从 GUI 导入 RVC `.pth`/可选 `.index` 或 DDSP 权重/配置，上传头像和真实试听。
-8. 头像：使用用户提供的 `assets/祥子音色头像.jpg` 作为未安装祥子卡片素材；不联网替换。支持 PNG/JPG/JPEG/WebP、EXIF 修正、512×512 裁切和首字母占位。
-9. 祥子双模型：清单保留固定 ID，但未找到身份、训练数据授权和再分发许可都明确的权重，故未下载、未生成试听。
-10. 标准干声/自动试听：尚无满足 8–15 秒、真实无伴奏且明确可再分发的源音频，所以保持禁用。
-11. 原词主链：GUI 同款 worker 已对《春日影》全曲完成 MSST→RVC→对齐→响度混音→WAV，43.4 秒完成；再次请求 0.55 秒命中缓存。DDSP 路线尚未验收。
-12. 改词 Beta：界面和条件后端适配存在，但 Vevo2、GAME、DiffSinger 尚未下载权重或真实推理，不宣称可用。
-13. 硬件：RTX 5070 Ti Laptop，12172 MiB；PyTorch 2.9.1+cu130 CUDA tensor、MSST、RVC 三项验证通过。
-14. 测试：14 项 pytest 全部通过；Windows GUI、双击 `app.py`、冻结 EXE、FFmpeg、MSST 与 RVC 集成测试通过。
-15. 发行：Modern/Legacy 当前打包 GUI、FFmpeg 与素材；AI 后端/权重体积大且分发条款各异，未塞入源码 Git 或阶段 EXE 目录。
-16. 当前风险：DDSP、祥子双模型、合法标准干声和改词扩展仍未解决；第三方兼容补丁必须在后端安装流程中可复现。
-17. 下一步：完成 DDSP 6.x 合法测试模型与安装脚本，然后把已验证的 MSST/RVC 安装流程接入组件管理页，最后再评估改词扩展。
+1. GUI：七个简体中文 Qt Widgets 页面、左侧导航、背景蒙层、音频拖放、Qt Multimedia 播放器、托盘、窗口/页面记忆。
+2. 启动：双击 `app.py` 自动转交 `pythonw.exe`；Modern/Legacy EXE 均为 windowed onedir，不显示控制台、不打开浏览器。
+3. 后端：MSST `e247dfe...`、RVC `7b284a6...`、DDSP-SVC `2e2ac5d...` 均在各自独立环境通过真实 CUDA 推理。
+4. MSST：官方 MDX23C vocals SDR 10.17 完成公共领域样例和《春日影》全曲分离。
+5. 祥子 RVC：TogetsuDo revision `61676cf...`，weight/index 均记录 SHA256；30 秒 indexed 与全曲 worker 成功。
+6. 祥子 DDSP：TogetsuDo revision `4b77b1a...`，weight/config 均记录 SHA256；30 秒与全曲 worker 成功。
+7. 权利边界：两套祥子权重都是未经官方授权的社区模型、license `Other`，只在本机按用户要求安装测试，不随 Git 或公开发行包分发；头像仅使用用户提供图片。
+8. 标准试听：owstu/Freesound “Female Vocal 01.wav”，CC0，转换后 9.008 秒；目标 RVC/DDSP 均由此干声实际推理生成独立 `preview.wav`。
+9. 自动试听：导入模型没有试听时提交独立 QProcess worker；有进度、可取消、失败写入 SQLite；卡片只有真实文件存在时才播放。
+10. 原词链路：标准化 → MSST → RVC/DDSP → 对齐 → LUFS/峰值混音 → WAV/FLAC/MP3；两引擎都完成《春日影》257.84 秒全曲真实输出。
+11. 缓存：最终结果按完整参数缓存；标准化与 MSST 分离按输入和 checkpoint 单独共享，换音色/引擎不重复分离。
+12. 模型导入：RVC `.pth/.pt` + 可选 `.index`；DDSP `.pt/.ckpt` + 配置；哈希去重、不覆盖、中文路径、头像裁切、WAV 试听上传。
+13. 安全：下载器支持断点、校验、安全解压；checkpoint 先做 unsafe-global/weights-only 检查；子进程参数列表调用，无 `shell=True`。
+14. 测试：15 项 pytest 全部通过；完整数值与文件哈希见 `docs/TEST_REPORT.md`。
+15. 发行：Modern/Legacy 最终重建目录各 576.1 MiB、457 个文件；两者 EXE 启动 5 秒后均保持窗口进程存活。包内含 FFmpeg 与 CC0 试听源，不含《春日影》、模型权重或大型后端。
+16. Vevo2：官方 4.28 GB 推理权重已安装；中文/日文 9.16 秒样例都真实成功，峰值显存 7.91 GB。模型为 CC BY-NC-ND 4.0，不进入公开发行包；完整歌曲切句/对齐/拼接尚未接入 GUI。
+17. GAME：官方 small 模型已对《春日影》30 秒真实提取 MIDI/TXT/CSV。DiffSinger 源码已固定，但当前官方分支不附歌声模型，因此 fallback 合成 WAV 仍不可用。
+18. 未完成：每引擎 3～5 个可再分发初始音色、完整改词 GUI 流水线、DiffSinger 合成和实体旧显卡 Legacy 验收。界面不会把未完成部分伪装为可用。
+19. 当前优先级：先取得条款清晰的可再分发基础音色和 DiffSinger acoustic 模型，再把已验证 Vevo2/GAME 包装为可取消 worker，最后制作包含相应许可证的完整运行时包。
