@@ -1,0 +1,222 @@
+schema_version: 1
+last_updated: "2026-08-09"
+resources:
+  - resource_id: ffmpeg_windows_essentials
+    type: runtime
+    name: FFmpeg Windows Essentials
+    author: FFmpeg developers; Windows build by Gyan Doshi
+    official_repository: https://git.ffmpeg.org/ffmpeg.git
+    source_page: https://ffmpeg.org/download.html#build-windows
+    download_url: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+    version: 9.0-essentials_build-www.gyan.dev
+    tag: ""
+    commit: ""
+    file_size: 111167378
+    sha256: e6b54767a6065919048f1a098eb27211ca4e12b4348a05d88777a5855d0b6e71
+    license: GPL-3.0-or-later (build-dependent; inspect bundled license)
+    redistribution_allowed: true
+    install_directory: ffmpeg
+    backend: core
+    last_verified: "2026-08-09"
+    status: installed_verified
+    notes: FFmpeg 官网列出的 Windows 第三方构建之一；已下载、安全解压并执行 ffmpeg/ffprobe version smoke test。GPLv3 static build。
+
+  - resource_id: msst_source
+    type: backend_source
+    name: Music Source Separation Training
+    author: ZFTurbo / MVSep contributors
+    official_repository: https://github.com/ZFTurbo/Music-Source-Separation-Training
+    source_page: https://github.com/ZFTurbo/Music-Source-Separation-Training
+    download_url: https://github.com/ZFTurbo/Music-Source-Separation-Training/archive/refs/heads/main.zip
+    version: main (must pin before release)
+    tag: ""
+    commit: ""
+    file_size: null
+    sha256: ""
+    license: MIT
+    redistribution_allowed: true
+    install_directory: external_backends/msst/Music-Source-Separation-Training
+    backend: msst
+    last_verified: "2026-08-09"
+    status: researched_not_downloaded
+    notes: 官方 inference.py 接口已核验；代码、环境、配置、权重均未在本机安装。
+
+  - resource_id: msst_vocal_model
+    type: model
+    name: MSST vocal separation checkpoint
+    author: unknown until a specific official release asset is selected
+    official_repository: https://github.com/ZFTurbo/Music-Source-Separation-Training
+    source_page: https://github.com/ZFTurbo/Music-Source-Separation-Training?tab=readme-ov-file#pre-trained-models
+    download_url: ""
+    version: ""
+    tag: ""
+    commit: ""
+    file_size: null
+    sha256: ""
+    license: unverified
+    redistribution_allowed: false
+    install_directory: external_backends/msst/models
+    backend: msst
+    last_verified: "2026-08-09"
+    status: blocked_license_and_identity
+    notes: 未选定具体模型前不捏造下载地址、作者、许可证或哈希。
+
+  - resource_id: rvc_cli_source
+    type: backend_source
+    name: Retrieval-based Voice Conversion CLI
+    author: RVC-Project
+    official_repository: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
+    source_page: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
+    download_url: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion/archive/refs/heads/main.zip
+    version: development main (must pin before release)
+    tag: ""
+    commit: ""
+    file_size: null
+    sha256: ""
+    license: MIT
+    redistribution_allowed: true
+    install_directory: external_backends/rvc
+    backend: rvc
+    last_verified: "2026-08-09"
+    status: researched_not_downloaded
+    notes: 官方提供 rvc infer CLI；尚未安装依赖和基础编码器权重。
+
+  - resource_id: ddsp_svc_source
+    type: backend_source
+    name: DDSP-SVC
+    author: yxlllc
+    official_repository: https://github.com/yxlllc/DDSP-SVC
+    source_page: https://github.com/yxlllc/DDSP-SVC
+    download_url: https://github.com/yxlllc/DDSP-SVC/archive/refs/heads/master.zip
+    version: 5.x repository state (must pin before release)
+    tag: ""
+    commit: ""
+    file_size: null
+    sha256: ""
+    license: MIT
+    redistribution_allowed: true
+    install_directory: external_backends/ddsp/DDSP-SVC
+    backend: ddsp
+    last_verified: "2026-08-09"
+    status: researched_not_downloaded
+    notes: 官方 README 明确列出 Windows Python 3.11/CUDA 13 组合和 main_reflow.py 推理接口。
+
+  - resource_id: amphion_vevo2_source
+    type: optional_backend_source
+    name: Amphion Vevo2
+    author: OpenMMLab Amphion contributors
+    official_repository: https://github.com/open-mmlab/Amphion
+    source_page: https://github.com/open-mmlab/Amphion/tree/main/models/svc/vevo2
+    download_url: https://github.com/open-mmlab/Amphion/archive/refs/heads/main.zip
+    version: main (must pin before release)
+    tag: ""
+    commit: ""
+    file_size: null
+    sha256: ""
+    license: repository license; model terms must be checked separately
+    redistribution_allowed: false
+    install_directory: external_backends/vevo2/Amphion
+    backend: vevo2
+    last_verified: "2026-08-09"
+    status: deferred_not_downloaded
+    notes: 依赖大型 Hugging Face 权重；当前未验证中文、日语推理和显存占用。
+
+  - resource_id: openvpi_game_source
+    type: optional_backend_source
+    name: GAME
+    author: OpenVPI
+    official_repository: https://github.com/openvpi/GAME
+    source_page: https://github.com/openvpi/GAME
+    download_url: https://github.com/openvpi/GAME/archive/refs/heads/main.zip
+    version: main (must pin before release)
+    tag: ""
+    commit: ""
+    file_size: null
+    sha256: ""
+    license: MIT
+    redistribution_allowed: true
+    install_directory: external_backends/game/GAME
+    backend: game
+    last_verified: "2026-08-09"
+    status: deferred_not_downloaded
+    notes: 官方 infer.py 可导出与 DiffSinger 数据格式兼容的 MIDI/文本；权重未下载。
+
+  - resource_id: openvpi_diffsinger_source
+    type: optional_backend_source
+    name: DiffSinger
+    author: OpenVPI
+    official_repository: https://github.com/openvpi/DiffSinger
+    source_page: https://github.com/openvpi/DiffSinger
+    download_url: https://github.com/openvpi/DiffSinger/archive/refs/heads/master.zip
+    version: master (must pin before release)
+    tag: ""
+    commit: ""
+    file_size: null
+    sha256: ""
+    license: Apache-2.0 (code); voices and vocoders have separate terms
+    redistribution_allowed: false
+    install_directory: external_backends/diffsinger/DiffSinger
+    backend: diffsinger
+    last_verified: "2026-08-09"
+    status: deferred_not_downloaded
+    notes: 未选定可再分发歌声模型、vocoder 和 G2P 前不启用。
+
+  - resource_id: toyokawa_sakiko_rvc
+    type: voice_model
+    name: 丰川祥子 RVC
+    author: unknown
+    official_repository: ""
+    source_page: ""
+    download_url: ""
+    version: ""
+    tag: ""
+    commit: ""
+    file_size: null
+    sha256: ""
+    license: unverified
+    redistribution_allowed: false
+    install_directory: weights/rvc/bundled/toyokawa_sakiko_rvc
+    backend: rvc
+    last_verified: "2026-08-09"
+    status: blocked_identity_license
+    notes: 用户已提供本地头像 assets/祥子音色头像.jpg；未找到身份、授权、训练数据来源和分发许可均明确的官方模型，不下载、不内置、不生成虚假试听。
+
+  - resource_id: toyokawa_sakiko_ddsp
+    type: voice_model
+    name: 丰川祥子 DDSP
+    author: unknown
+    official_repository: ""
+    source_page: ""
+    download_url: ""
+    version: ""
+    tag: ""
+    commit: ""
+    file_size: null
+    sha256: ""
+    license: unverified
+    redistribution_allowed: false
+    install_directory: weights/ddsp/bundled/toyokawa_sakiko_ddsp
+    backend: ddsp
+    last_verified: "2026-08-09"
+    status: blocked_identity_license
+    notes: 同上。使用用户提供的 assets/祥子音色头像.jpg，且不会被联网图片替代。
+
+  - resource_id: neutral_melody
+    type: preview_source_audio
+    name: Neutral unaccompanied singing source
+    author: unknown until selected
+    official_repository: ""
+    source_page: ""
+    download_url: ""
+    version: ""
+    tag: ""
+    commit: ""
+    file_size: null
+    sha256: ""
+    license: unverified
+    redistribution_allowed: false
+    install_directory: assets/preview_sources/neutral_melody.wav
+    backend: core
+    last_verified: "2026-08-09"
+    status: blocked_legal_source
+    notes: 尚未找到同时满足真实无伴奏歌声、8–15 秒和明确再分发权的来源；不以合成音、静音或随机声音替代。
