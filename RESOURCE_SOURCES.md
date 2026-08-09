@@ -12,6 +12,7 @@
 - OpenVPI PC-NSF-HiFiGAN：https://github.com/openvpi/vocoders/releases/tag/pc-nsf-hifigan-44.1k-hop512-128bin-2025.02
 - 丰川祥子 RVC（非官方社区模型）：https://huggingface.co/TogetsuDo/sakiko-rvc
 - 丰川祥子 DDSP（非官方社区模型）：https://huggingface.co/TogetsuDo/sakiko-ddsp-svc-6.3
+- 可可萝 DDSP-SVC 6.3 中文社区模型（本机测试）：https://huggingface.co/yuier0721/DDSP-SVC_6.3_pcr-kokkoro_2.0
 - CC0 标准试听干声（owstu / Female Vocal 01）：https://freesound.org/people/owstu/sounds/508815/
 - Amphion Vevo2：https://github.com/open-mmlab/Amphion/tree/main/models/svc/vevo2
 - Vevo2 官方权重：https://huggingface.co/RMSnow/Vevo2

@@ -43,6 +43,8 @@ def dispatch() -> int:
         request = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
         if request.get("kind") == "preview":
             from opencover.workers.preview_worker import main as worker_main
+        elif request.get("kind") == "lyric":
+            from opencover.workers.lyric_cover_worker import main as worker_main
         else:
             from opencover.workers.original_cover_worker import main as worker_main
 

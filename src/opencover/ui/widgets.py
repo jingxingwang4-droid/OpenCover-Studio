@@ -95,6 +95,7 @@ class AudioPlayer(QFrame):
 class VoiceCard(QFrame):
     selected = Signal(str)
     preview_requested = Signal(str)
+    manage_requested = Signal(str)
 
     def __init__(self, model, directory: Path, parent: QWidget | None = None):  # type: ignore[no-untyped-def]
         super().__init__(parent)
@@ -120,11 +121,14 @@ class VoiceCard(QFrame):
         buttons = QVBoxLayout()
         preview = QPushButton("试听" if model.preview else "生成试听")
         choose = QPushButton("选择")
+        manage = QPushButton("管理")
         choose.setObjectName("Primary")
         preview.clicked.connect(lambda: self.preview_requested.emit(model.id))
         choose.clicked.connect(lambda: self.selected.emit(model.id))
+        manage.clicked.connect(lambda: self.manage_requested.emit(model.id))
         buttons.addWidget(preview)
         buttons.addWidget(choose)
+        buttons.addWidget(manage)
         layout.addWidget(avatar)
         layout.addLayout(text, 1)
         layout.addLayout(buttons)

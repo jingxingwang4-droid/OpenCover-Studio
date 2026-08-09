@@ -1,8 +1,8 @@
 # OpenCover Studio
 
-OpenCover Studio 是面向 Windows 普通用户的本地歌曲翻唱桌面应用。当前仓库是 **v0.1.0 阶段性可运行版本**：桌面 GUI、模型导入、独立任务、SQLite、安全下载、音频标准化/分离/转换/混音与试听均已实现；MSST + RVC 和 MSST + DDSP 都在本机对 `assets/audio/春日影.wav` 完成了真实 CUDA 全曲推理。改词扩展仍会明确显示未就绪，不会输出伪造音频。
+OpenCover Studio 是面向 Windows 普通用户的本地歌曲翻唱桌面应用。当前仓库是 **v0.1.0 阶段性可运行版本**：桌面 GUI、模型导入/编辑、独立任务、SQLite、安全下载、音频标准化/分离/转换/混音与真实试听均已实现；MSST + RVC 和 MSST + DDSP 都在本机对 `assets/audio/春日影.wav` 完成了真实 CUDA 全曲推理。
 
-研究性改词后端方面，Vevo2 已完成中文/日文固定短句真实生成，GAME 已完成《春日影》30 秒人声的 MIDI/TXT/CSV 提取；由于完整歌曲切句/对齐/拼接尚未接入且 DiffSinger 缺少许可与格式匹配的歌声模型，“改词翻唱 Beta”仍保持禁用。
+“改词翻唱 Beta”现已接入 GUI 和 JobManager：支持粘贴或导入 UTF-8/GBK/Shift-JIS 的 TXT/LRC，执行 MSST → LRC/逐行短句规划 → Vevo2 → 时长拼接 → RVC/DDSP → 混音。已用打包后的专用 worker 完成中文端到端真实输出。无时间戳的长歌曲会要求用户提供 LRC，不会把粗略平均分段冒充歌词对齐；GAME + DiffSinger fallback 仍因缺少许可与格式匹配的歌声模型而禁用。
 
 ## 本地开发运行
 
@@ -22,8 +22,9 @@ python -m venv .venv
 
 1. 在“组件管理”确认 FFmpeg、MSST 与 RVC 或 DDSP 已经安装且通过真实 smoke test。
 2. 在“音色管理”或“原词翻唱”点击“导入音色”。RVC 接受 `.pth` 和可选 `.index`；DDSP 接受 `.pt/.ckpt` 和可选配置。
-3. 可选上传 PNG/JPG/WebP 头像与真实 WAV 试听。未上传试听时，软件会在独立 worker 中用 CC0 标准干声和目标模型自动生成；失败时仍显示“生成试听”，不会播放原干声冒充结果。
-4. 拖入歌曲，先选 RVC/DDSP，再选对应音色，点击“开始翻唱”。已通过 smoke test 的后端会在独立 worker 中真实执行分离、转换、混音和导出；同一输入/音色/Key 会复用缓存。
+3. 试听可明确选择“自动生成 / 上传 / 暂不生成”。上传支持 WAV/FLAC/MP3/M4A，经 FFmpeg 限长并统一为 `preview.wav`；自动模式用 CC0 标准干声和目标模型真实推理。
+4. 拖入歌曲，先选 RVC/DDSP，再选对应音色，点击“开始翻唱”。分离、改词生成、音色转换、混音和格式分别缓存；换混音或格式不会重复模型推理。
+5. 改词页优先使用带时间戳 LRC。每句被限制在约 3～15 秒范围，新歌词密度超出所选“保守/均衡/强制”策略时会明确拒绝。
 
 `assets/preview_sources/neutral_melody.wav` 来自 owstu 在 Freesound 发布的 CC0 清唱素材，9.008 秒。当前本机另安装并验证了 TogetsuDo 的丰川祥子 RVC/DDSP 社区模型；它们均为非官方且没有明确再分发许可，因此被 `.gitignore` 排除，也不会打入公开发行包。资源真实状态详见 `config/resource_manifest.yaml` 与 `docs/RESOURCE_RESEARCH.md`。
 
@@ -36,9 +37,9 @@ python -m venv .venv
 ./scripts/build_windows.ps1 Legacy
 ```
 
-构建脚本使用 PyInstaller `--windowed --onedir`，生成无控制台窗口的目录式发行包。Modern/Legacy 当前区别是发行配置目标；本机独立 CUDA 后端体积较大，且多个模型权重不允许安全再分发，因此公开发行目录只含 GUI、FFmpeg 与 CC0 试听源。开发工作区中的完整 MSST/RVC/DDSP 环境可直接真实推理。
+构建脚本生成 windowed GUI 和独立 `OpenCoverStudioWorker.exe`。Qt 以 `CREATE_NO_WINDOW` 启动 worker，因此没有可见终端，同时保留 UTF-8 JSON Lines 进度、SQLite 状态和进程树取消。公开 Modern/Legacy 阶段包含 GUI、worker、顶层 assets/config、FFmpeg 与 CC0 试听源；受限制权重不进入公开包。
 
-本机阶段构建位于 `dist/OpenCoverStudio-NVIDIA-Modern` 与 `dist/OpenCoverStudio-NVIDIA-Legacy`，各 576.1 MiB；两份 EXE 均完成窗口进程启动检查。`dist/` 按要求不进入 Git；详细证据见 `docs/TEST_REPORT.md` 和 `docs/FINAL_REPORT.md`。
+`./scripts/build_local_full.ps1 Modern` 另可在 `release_private/` 组装当前机器专用的 22.75 GiB 完整目录；它包含不可再分发的社区模型、Vevo2 和绑定本机解释器路径的虚拟环境，必须遵守 `LOCAL_ONLY_FULL_PACKAGE.txt`，不能公开上传。该私有包已完成打包 worker 端到端改词和取消测试。Legacy 尚无实体旧显卡/CUDA 11.8 验收，不宣称已兼容。
 
 ## 安全与版权
 

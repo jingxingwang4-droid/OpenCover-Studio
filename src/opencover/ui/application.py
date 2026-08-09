@@ -27,7 +27,16 @@ def main() -> int:
     local_ffmpeg = paths.ffmpeg / "bin" / "ffmpeg.exe"
     if not local_ffmpeg.exists():
         local_ffmpeg = next(paths.ffmpeg.glob("*/bin/ffmpeg.exe"), local_ffmpeg)
-    hardware = detect_hardware(str(local_ffmpeg) if local_ffmpeg.exists() else None)
+    runtimes = [
+        paths.external_backends / name / "runtime" / "Scripts" / "python.exe"
+        for name in ("rvc", "ddsp", "vevo2")
+    ]
+    torch_python = next((runtime for runtime in runtimes if runtime.is_file()), None)
+    hardware = detect_hardware(
+        str(local_ffmpeg) if local_ffmpeg.exists() else None,
+        str(torch_python) if torch_python else None,
+        str(paths.workspace),
+    )
     database = Database(paths.workspace / "opencover.db")
     window = MainWindow(paths, settings, hardware, database); window.show()
     return app.exec()

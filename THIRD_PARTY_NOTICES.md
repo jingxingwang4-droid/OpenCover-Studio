@@ -11,6 +11,7 @@ Git 源码提交包含原创 MIT 代码、用户提供的四张图片与资源�
 - OpenVPI PC-NSF-HiFiGAN：权重所附 `NOTICE.txt` 声明 CC BY-NC-SA 4.0；当前只安装于本机测试环境，不进入发行包。
 - RMVPE：来自 yxlllc/RMVPE 官方 230917 release；权重未见单独分发条款，当前不再分发。
 - `TogetsuDo/sakiko-rvc` 与 `TogetsuDo/sakiko-ddsp-svc-6.3`：非官方社区角色音色，Hugging Face 标注 `Other`，未声明再分发授权；只作本机测试。
+- `yuier0721/DDSP-SVC_6.3_pcr-kokkoro_2.0`：模型卡标 MIT，但数据来自角色衍生语音，角色/源音频权利不随模型卡自动授予；只作本机兼容性与试听测试，不进入公开包。
 - `assets/preview_sources/neutral_melody.wav`：由 owstu 的 Freesound “Female Vocal 01.wav” CC0 素材转换，允许复制、修改和再分发。
 - Amphion / Vevo2：代码与预训练模型条款需分别复核，当前不再分发。
 - RMSnow/Vevo2 权重：CC BY-NC-ND 4.0；已本机实测，不再分发。

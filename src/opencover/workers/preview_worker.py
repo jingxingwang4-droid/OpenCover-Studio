@@ -10,7 +10,8 @@ from opencover.models.registry import ModelRegistry
 
 
 def emit(kind: str, **data: object) -> None:
-    print(json.dumps({"type": kind, **data}, ensure_ascii=False), flush=True)
+    payload = json.dumps({"type": kind, **data}, ensure_ascii=False) + "\n"
+    sys.stdout.buffer.write(payload.encode("utf-8")); sys.stdout.buffer.flush()
 
 
 def _sha256(path: Path) -> str:

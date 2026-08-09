@@ -155,11 +155,11 @@ resources:
     sha256: d309e8056dff08d33b30854839a9b9c36dfb612bf5971c070f552bde18158a55
     license: MIT model repository; training-data provenance not separately stated
     redistribution_allowed: false
-    install_directory: external_backends/rvc/models/rvc_official_demo_voice.pt
+    install_directory: weights/rvc/user_models/rvc_official_demo_voice
     backend: rvc
     last_verified: "2026-08-10"
-    status: inference_smoke_tested_only
-    notes: 已下载并校验 SHA256；已对《春日影》分离人声 20–50 秒片段完成真实 RVC 推理。仅用于证明链路可运行，不作为祥子音色、不进入发布包、不生成冒充祥子的试听。
+    status: installed_preview_and_inference_tested_local_only
+    notes: 已下载并校验 SHA256；已对《春日影》分离人声 20–50 秒片段完成真实 RVC 推理，并用 CC0 标准干声生成独立 9.000 秒试听，preview SHA256 ad78c1dcf97358825796d9dbbe1f195faf4fcd55b1165ef3f20da02a1f80cbb0。训练数据条款未单列，不进入发行包。
 
   - resource_id: ddsp_svc_source
     type: backend_source
@@ -258,8 +258,8 @@ resources:
     install_directory: external_backends/vevo2/Amphion
     backend: vevo2
     last_verified: "2026-08-09"
-    status: inference_smoke_tested
-    notes: 官方代码、独立 Python 3.10 / torch 2.9.1+cu130 环境及官方权重已安装；中文/日文各生成 9.16 秒真实 WAV，总耗时 25.78 秒，峰值 CUDA 7,910,244,864 bytes。完整 GUI 改词流水线尚未接入。
+    status: gui_lyric_pipeline_integration_tested
+    notes: 官方代码、独立 Python 3.10 / torch 2.9.1+cu130 环境及官方权重已安装；中文/日文各生成 9.16 秒真实 WAV。另已接入 GUI/JobManager 改词 worker，并完成 MSST→Vevo2→祥子 RVC→时长校正→混音端到端测试；输出 SHA256 8271ac4c3099e7d95f1b4e5a95c5ebde3d08a29d2b407651f1c042873e097de3。
 
   - resource_id: vevo2_inference_weights
     type: model_bundle
@@ -278,8 +278,8 @@ resources:
     install_directory: external_backends/vevo2/models/Vevo2
     backend: vevo2
     last_verified: "2026-08-10"
-    status: installed_inference_smoke_tested_local_only
-    notes: 只下载推理文件，排除 optimizer/trainer state。SHA256：FM ef3733b3...7186；AR b056f8b4...cf16；content tokenizer bebdcea3...51b0；prosody tokenizer 754ba592...8ae4；vocoder 主文件 5b5d1a46...56d3、分片 850799d7...0af6/56130fd1...67f8。许可含 NC/ND，不进入发行包。
+    status: installed_gui_integration_tested_local_only
+    notes: 只下载推理文件，排除 optimizer/trainer state。SHA256：FM ef3733b3...7186；AR b056f8b4...cf16；content tokenizer bebdcea3...51b0；prosody tokenizer 754ba592...8ae4；vocoder 主文件 5b5d1a46...56d3、分片 850799d7...0af6/56130fd1...67f8。独立与 GUI 改词 worker 均真实通过；许可含 NC/ND，不进入发行包。
 
   - resource_id: openvpi_game_source
     type: optional_backend_source
@@ -380,6 +380,26 @@ resources:
     last_verified: "2026-08-09"
     status: installed_inference_smoke_tested_local_only
     notes: 非官方社区模型且未获角色/版权方授权，只在本机测试。config.yaml SHA256 5663203319aaf208f292ad1ef7506faa7132e5857f38838f2bbfecc61423dd08。weights_only 安全加载通过；30 秒及《春日影》全曲真实推理通过；不随 Git/发行包再分发。
+
+  - resource_id: kokkoro_ddsp_community
+    type: voice_model
+    name: 可可萝 DDSP-SVC 6.3 中文社区模型
+    author: yuier0721
+    official_repository: https://huggingface.co/yuier0721/DDSP-SVC_6.3_pcr-kokkoro_2.0
+    source_page: https://huggingface.co/yuier0721/DDSP-SVC_6.3_pcr-kokkoro_2.0/tree/aca068709a3b5b119edc19b173cbb213f03d7854
+    download_url: https://huggingface.co/yuier0721/DDSP-SVC_6.3_pcr-kokkoro_2.0/resolve/aca068709a3b5b119edc19b173cbb213f03d7854/model_500.pt
+    version: DDSP-SVC 6.3 epoch 30 step 500
+    tag: ""
+    commit: aca068709a3b5b119edc19b173cbb213f03d7854
+    file_size: 219737099
+    sha256: cca82132a952f9fd236246ab1e91e02ba86bda13c768a1ec58b6675911a64dbb
+    license: MIT model-card tag; derived character/audio rights remain separate
+    redistribution_allowed: false
+    install_directory: weights/ddsp/user_models/kokkoro_ddsp_community
+    backend: ddsp
+    last_verified: "2026-08-10"
+    status: installed_preview_inference_tested_local_only
+    notes: Hugging Face 固定 revision 与 LFS SHA256 匹配；unsafe globals 为空且 weights_only=True 加载成功。原 config SHA256 ad8e1970...a680；为复用官方 ContentVec 文件仅将 encoder_ckpt 改为 pytorch_model.bin，有效 config SHA256 9f70ef75...cdd6。CC0 标准干声真实 DDSP 推理输出 9.009 秒，preview SHA256 440ab50d49026dac0e76de76fdaebbb4cc0e009fe8f1d288d9f81e9b62ea3d1f。训练数据源自角色衍生语音，故只在本机测试、不再分发。
 
   - resource_id: neutral_melody
     type: preview_source_audio

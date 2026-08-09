@@ -23,7 +23,8 @@ class CoverRequest:
 
 def cache_key(request: CoverRequest) -> str:
     stat = request.input_path.stat()
-    data = f"{request.input_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}:{request.engine}:{request.voice.id}:{request.pitch}"
+    model_identity = ":".join(f"{name}={digest}" for name, digest in sorted(request.voice.sha256.items()) if name in request.voice.model_files + request.voice.index_files + request.voice.config_files)
+    data = f"{request.input_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}:{request.engine}:{request.voice.id}:{request.pitch}:{model_identity}"
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
@@ -80,8 +81,9 @@ class OriginalCoverPipeline:
         ffmpeg = ffmpeg_path(self.root)
         assert ffmpeg is not None
         key = cache_key(request)
+        final_key = hashlib.sha256(f"{key}:{request.balance}:{request.output_format.lower()}".encode("utf-8")).hexdigest()
         extension = request.output_format.lower()
-        output = self.root / "workspace" / "outputs" / f"{request.input_path.stem}_{request.voice.id}_{key[:10]}.{extension}"
+        output = self.root / "workspace" / "outputs" / f"{request.input_path.stem}_{request.voice.id}_{final_key[:10]}.{extension}"
         if output.is_file() and output.stat().st_size > 1024:
             report("export", 100, "已使用缓存结果")
             return output
@@ -122,16 +124,25 @@ class OriginalCoverPipeline:
 
         model_dir = request.voice.directory(self.root / "weights")
         model = model_dir / request.voice.model_files[0]
-        converted_raw = job_dir / "conversion" / "vocal_raw.wav"
-        report("convert", 58, f"正在使用 {request.engine.upper()} 转换音色")
-        if request.engine == "rvc":
-            index = model_dir / request.voice.index_files[0] if request.voice.index_files else None
-            self.rvc.convert(vocals, converted_raw, model, request.pitch, index)
-        elif request.engine == "ddsp":
-            config = model_dir / request.voice.config_files[0] if request.voice.config_files else None
-            self.ddsp.convert(vocals, converted_raw, model, request.pitch, config)
+        conversion_cache = self.root / "workspace" / "cache" / "voice_conversion" / key / "vocal_raw.wav"
+        if conversion_cache.is_file() and conversion_cache.stat().st_size > 1024:
+            report("convert", 58, "已复用音色转换缓存")
+            converted_raw = conversion_cache
         else:
-            raise RuntimeError(f"不支持的音色引擎：{request.engine}")
+            converted_raw = job_dir / "conversion" / "vocal_raw.wav"
+            report("convert", 58, f"正在使用 {request.engine.upper()} 转换音色")
+            if request.engine == "rvc":
+                index = model_dir / request.voice.index_files[0] if request.voice.index_files else None
+                self.rvc.convert(vocals, converted_raw, model, request.pitch, index)
+            elif request.engine == "ddsp":
+                config = model_dir / request.voice.config_files[0] if request.voice.config_files else None
+                self.ddsp.convert(vocals, converted_raw, model, request.pitch, config)
+            else:
+                raise RuntimeError(f"不支持的音色引擎：{request.engine}")
+            conversion_cache.parent.mkdir(parents=True, exist_ok=True)
+            partial = conversion_cache.with_suffix(".wav.part")
+            shutil.copy2(converted_raw, partial); partial.replace(conversion_cache)
+            converted_raw = conversion_cache
 
         converted = job_dir / "conversion" / "vocal_44100.wav"
         report("align", 80, "正在校正采样率与时长")

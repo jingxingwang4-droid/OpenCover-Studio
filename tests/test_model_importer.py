@@ -26,6 +26,8 @@ def test_import_rvc_with_chinese_paths(tmp_path: Path) -> None:
     )
     assert model.preview_source == "uploaded"
     assert model.avatar == "avatar.webp"
+    assert "avatar_original.png" in model.sha256
+    assert "preview_original.wav" in model.sha256
     assert ModelRegistry(tmp_path / "weights").get(model.id) is not None
 
 
@@ -39,6 +41,25 @@ def test_duplicate_weight_is_rejected(tmp_path: Path) -> None:
 
 def test_missing_preview_stays_unavailable(tmp_path: Path) -> None:
     weight = tmp_path / "voice.pt"; weight.write_bytes(b"ddsp-model" * 200)
-    model = ModelImporter(tmp_path / "weights").import_model(engine="ddsp", weight=weight, display_name="no preview")
+    config = tmp_path / "模型.yml"; config.write_text("model: {}", encoding="utf-8")
+    model = ModelImporter(tmp_path / "weights").import_model(engine="ddsp", weight=weight, display_name="no preview", index_or_config=config)
     assert model.preview is None
     assert model.preview_source == "none"
+    assert model.config_files == ["config.yaml"]
+
+
+def test_edit_metadata_remove_preview_and_delete_user_model(tmp_path: Path) -> None:
+    weight = tmp_path / "voice.pth"; weight.write_bytes(b"model" * 300)
+    preview = tmp_path / "preview.wav"; _wav(preview)
+    importer = ModelImporter(tmp_path / "weights")
+    model = importer.import_model(engine="rvc", weight=weight, display_name="旧名称", preview=preview)
+    changed = importer.update_model(
+        model.id, display_name="新名称", description="新简介", recommended_pitch=3,
+        languages=["zh", "ja"], remove_preview=True,
+    )
+    assert changed.display_name == "新名称"
+    assert changed.recommended_pitch == 3
+    assert changed.preview is None
+    assert not list(changed.directory(tmp_path / "weights").glob("preview*"))
+    importer.delete_user_model(model.id)
+    assert ModelRegistry(tmp_path / "weights").get(model.id) is None

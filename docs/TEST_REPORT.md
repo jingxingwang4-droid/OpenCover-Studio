@@ -3,10 +3,11 @@
 ## 环境与自动化
 
 - Windows 10 build 26200；GUI Python 3.10.20；PySide6 6.11.1。
-- NVIDIA GeForce RTX 5070 Ti Laptop GPU，12172 MiB，驱动 591.86。
+- NVIDIA GeForce RTX 5070 Ti Laptop GPU，12172 MiB，驱动 591.86，Compute Capability 12.0，驱动报告 CUDA 13.1。
 - MSST/RVC 为 PyTorch 2.9.1+cu130；DDSP 为独立 Python 3.11.5、PyTorch/torchaudio 2.9.1+cu130；三者 CUDA tensor smoke test 均通过。
 - FFmpeg 9.0 essentials build。
-- `.venv\Scripts\python.exe -m pytest -q`：`15 passed`。覆盖 JSON Lines worker、ZIP 安全、SQLite/中文路径、模型导入/哈希去重、头像/上传试听、非静音混音、preflight、跨音色分离缓存 key、资源清单、七页面窗口、`pythonw` 双击转交与 RVC CLI。
+- 应用启动时调用后端 PyTorch 真实执行 CUDA FP16 tensor 运算：`cuda_smoke=True`、`fp16_supported=True`；Windows `GlobalMemoryStatusEx` 检出 31.4 GB RAM，本轮最终磁盘可用空间为 824.3 GB。
+- `.venv\Scripts\python.exe -m pytest -q`：`24 passed`。新增覆盖歌词编码/LRC/密度限制、Vevo2 完整状态、短句拼接、模型哈希缓存、DDSP `config.yaml` 导入规则、后端 UTF-8/GBK 错误透传、音色元数据编辑和删除。
 
 ## MSST
 
@@ -36,6 +37,9 @@
 - `app.py --worker` 分发入口对目标 RVC/DDSP 均成功真实重建 `preview.wav`：RVC SHA256 `6c5dfa85...a180`，DDSP SHA256 `719752da...3282`。输出与源文件哈希不同，不是复制、静音或其他音色替代。
 - 相同最终请求缓存命中：RVC 0.569 秒，DDSP 0.496 秒。
 - 共享阶段缓存验证：RVC pitch +1 首次 43.19 秒；随后 DDSP pitch +1 复用标准化与 MSST 分离结果，23.29 秒完成。
+- RVC 官方仓库示例音色独立试听：9.000 秒/40 kHz，SHA256 `ad78c1dc...cbb0`。普通 DDSP 社区音色独立试听：9.009 秒/44.1 kHz，SHA256 `440ab50d...3d1f`；两者均有限、非静音且与标准干声不同。
+- 修复 DDSP 导入器把配置命名为 `model.yaml` 导致上游固定查找 `config.yaml` 失败的问题；YML/YAML 输入现统一安全复制为 `config.yaml`。
+- 改词任务只改变混音平衡后 0.70 秒完成，日志明确显示复用 Vevo2 和 RVC 转换缓存；两份最终 WAV SHA256 分别为 `cf29b9fc...be31` 与 `09305da1...e76c`。
 
 ## Windows GUI 与发行
 
@@ -43,20 +47,25 @@
 - 导入无试听模型后会提交独立 preview worker；音色卡已有试听时使用 Qt Multimedia 播放，无试听时显示并启用“生成试听”。
 - 已修复 `MainWindow` 向 `JobManager` 传入 `AppPaths` 而非根 `Path` 导致按钮任务崩溃的问题。
 - Modern/Legacy 都按 PyInstaller `--windowed --onedir` 构建；公开包不包含用户测试歌和未获再分发授权的后端/角色权重。
-- 最终重建后两目录均为 576.1 MiB/457 文件；CC0 `neutral_melody.wav` 存在，`assets/audio/春日影.wav` 不存在，weights/backend 文件计数均为 0。两 EXE 分别启动 5 秒仍存活。
+- 最终重建后两目录均为 641.3 MiB/465 文件；CC0 `neutral_melody.wav` 存在，`assets/audio/春日影.wav` 不存在，weights/backend 文件计数均为 0。Modern、Legacy 与本机完整包三个 EXE 分别启动 8 秒仍存活。
+- 两个公开包的 `OpenCoverStudioWorker.exe` 无参数协议 smoke 均返回退出码 2、合法 UTF-8 JSON `BAD_ARGUMENTS`，stderr 为 0 bytes，证明冻结 worker 可启动且不会静默挂起。
 - 以系统 `python.exe app.py` 模拟双击：launcher 正常退出并产生 1 个新的项目 `pythonw.exe` GUI 进程，随后只终止该测试进程。
 
-## 改词后端研究性实测
+## 改词 GUI 与发行 worker 实测
 
 - Vevo2：Amphion commit `26f6883110181f1dbfe95c70a7c7dbaf4de5f42a`，RMSnow/Vevo2 revision `2674843cbaa50aa89ee7ccaf5bb15d6ccf46c6c8`。只下载 4,281,405,036 bytes 推理文件，排除 optimizer/trainer state；权重为 CC BY-NC-ND 4.0，不再分发。
 - 完整 AR 508.93M + Flow 362.87M + tokenizers + vocoder 255.04M 在 RTX 5070 Ti 成功加载；中文、日文各生成 9.16 秒/24 kHz/单声道 PCM16 WAV。中文 SHA256 `46baf4ea...c896`，日文 `f5b1bb0c...fb17`；RMS -25 dB，峰值约 -10.8/-10.6 dB；峰值 CUDA 7,910,244,864 bytes，总耗时 25.78 秒。
 - GAME：源码 commit `4ad815c90dfe2442730f3fdc866fd23e737cbc97`，官方 v1.0 small ZIP SHA256 `3d3e1ac0...c576`。对《春日影》30 秒分离人声用日语条件、CUDA 16-bit AMP 提取成功；MIDI SHA256 `c6dfeffb...8d3e`，TXT `733bc418...0043`，CSV `495cc9b7...798f`。
 - GAME 首次在结果全部保存后因 Rich 向 GBK 终端输出 `•` 而 teardown 失败；设置 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 后相同推理退出码 0。
+- 源码 worker 端到端 MSST→Vevo2→祥子 RVC→时长校正→混音成功；9.008 秒双声道输出 SHA256 `8271ac4c...97de3`。
+- 最初复用 windowed GUI EXE 作为 worker 时无 stdout 且卡住，已替换为 64,871,235-byte console-subsystem `OpenCoverStudioWorker.exe`；Qt 使用 `CREATE_NO_WINDOW` 隐藏启动。
+- `Modern-LocalFull` 为 22.75 GiB。其专用 worker 首次真实全链耗时 114 秒、退出码 0，输出 SHA256 `41f0bb4c...9143`，9.008 秒/44.1 kHz/双声道、RMS 0.05142、finite=True。
+- Qt JobManager 从该 worker 收到完整 UTF-8 JSON Lines，并将含中文的真实输出路径逐字写入 SQLite。Vevo2 `generate` 阶段在进度 40% 取消后状态为 `cancelled`、无输出，进程树检查 `orphan_count=0`。
 
 ## 未通过/未执行
 
 - 每个引擎 3～5 个可再分发初始音色尚未满足；当前祥子模型只允许本机使用的保守判断。
-- Vevo2 中文/日语和 GAME MIDI 提取已真实通过，但尚未接入完整 GUI 改词流水线。
+- 改词 Vevo2 主路径已接入并真实通过；无时间戳长歌曲仍要求 LRC，尚未集成自动 ASR 强制对齐模型。
 - DiffSinger 当前官方分支不附歌声 acoustic/variance 模型；未找到格式匹配且许可清晰的模型，因此 GAME + DiffSinger 合成 WAV 仍未完成。
 - Legacy CUDA 11.8 机器未获得实体旧显卡实测；“Legacy”目前只代表发行目标，不宣称兼容性已验收。
 - 没有以 mock、输入复制、静音或随机音频代替任何上述未完成结果。

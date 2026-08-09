@@ -3,14 +3,16 @@ from __future__ import annotations
 import json
 import logging
 import os
+import subprocess
 import sys
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QProcess, Signal
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 
 from opencover.storage.database import Database
 from opencover.models.registry import ModelRegistry
+from opencover.adapters.base import _decode_output
 from .worker_protocol import WorkerEvent
 
 LOG = logging.getLogger(__name__)
@@ -51,6 +53,11 @@ class JobManager(QObject):
         }
         return self._submit(record, "opencover.workers.preview_worker")
 
+    def submit_lyric(self, payload: dict[str, object]) -> str:
+        job_id = uuid.uuid4().hex
+        record = {"id": job_id, "kind": "lyric", **payload}
+        return self._submit(record, "opencover.workers.lyric_cover_worker")
+
     def _submit(self, record: dict[str, object], source_module: str) -> str:
         job_id = str(record["id"])
         self.database.create_job(record)
@@ -59,9 +66,13 @@ class JobManager(QObject):
         request_path = job_dir / "request.json"
         request_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
         process = QProcess(self)
+        if os.name == "nt" and hasattr(process, "setCreateProcessArgumentsModifier"):
+            def hide_console(arguments):  # type: ignore[no-untyped-def]
+                arguments.flags |= 0x08000000  # CREATE_NO_WINDOW
+            process.setCreateProcessArgumentsModifier(hide_console)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         process.setWorkingDirectory(str(self.root))
-        environment = process.processEnvironment()
+        environment = QProcessEnvironment.systemEnvironment()
         source_dir = str(self.root / "src")
         environment.insert("PYTHONPATH", source_dir + os.pathsep + environment.value("PYTHONPATH"))
         process.setProcessEnvironment(environment)
@@ -72,7 +83,12 @@ class JobManager(QObject):
         self.buffers[job_id] = ""
         self.database.update_job(job_id, status="running", stage="validate")
         if getattr(sys, "frozen", False):
-            process.start(sys.executable, ["--worker", str(request_path)])
+            worker = self.root / "OpenCoverStudioWorker.exe"
+            if not worker.is_file():
+                self.database.update_job(job_id, status="failed", error="发行包缺少 OpenCoverStudioWorker.exe")
+                self.processes.pop(job_id, None); self.buffers.pop(job_id, None)
+                raise FileNotFoundError("发行包缺少 OpenCoverStudioWorker.exe")
+            process.start(str(worker), [str(request_path)])
         else:
             process.start(sys.executable, ["-m", source_module, str(request_path)])
         return job_id
@@ -80,17 +96,24 @@ class JobManager(QObject):
     def cancel(self, job_id: str) -> None:
         process = self.processes.get(job_id)
         if process and process.state() != QProcess.ProcessState.NotRunning:
-            process.terminate()
-            if not process.waitForFinished(3000):
-                process.kill()
             self.database.update_job(job_id, status="cancelled", error="用户取消")
+            pid = int(process.processId())
+            if os.name == "nt" and pid > 0:
+                subprocess.run(
+                    ["taskkill.exe", "/PID", str(pid), "/T", "/F"],
+                    capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), shell=False,
+                )
+            else:
+                process.terminate()
+                if not process.waitForFinished(3000):
+                    process.kill()
 
     def running(self) -> bool:
         return any(p.state() != QProcess.ProcessState.NotRunning for p in self.processes.values())
 
     def _read(self, job_id: str) -> None:
         process = self.processes[job_id]
-        text = bytes(process.readAllStandardOutput()).decode("utf-8", "replace")
+        text = _decode_output(bytes(process.readAllStandardOutput()))
         self.buffers[job_id] += text
         while "\n" in self.buffers[job_id]:
             line, self.buffers[job_id] = self.buffers[job_id].split("\n", 1)
@@ -111,7 +134,7 @@ class JobManager(QObject):
             self.event.emit(job_id, event)
 
     def _read_error(self, job_id: str) -> None:
-        error = bytes(self.processes[job_id].readAllStandardError()).decode("utf-8", "replace").strip()
+        error = _decode_output(bytes(self.processes[job_id].readAllStandardError())).strip()
         if error:
             LOG.error("worker %s stderr: %s", job_id, error)
 

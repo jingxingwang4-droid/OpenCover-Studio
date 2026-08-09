@@ -61,3 +61,12 @@ class Database:
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
         return [dict(row) for row in rows]
+
+    def get_job(self, job_id: str) -> dict[str, object] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        return dict(row) if row else None
+
+    def delete_job(self, job_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))

@@ -17,3 +17,9 @@
 - 改词扩展仍保持未验证状态，非官方角色权重仍禁止进入公开发行包。
 - 固定并安装 Amphion Vevo2 4.28 GB 推理权重，真实生成中文/日文 9.16 秒 WAV，峰值 CUDA 7.91 GB。
 - 固定 GAME 源码与 v1.0 small 模型，对《春日影》30 秒人声真实导出 MIDI/TXT/CSV；记录 DiffSinger 官方分支缺少歌声模型的阻塞状态。
+- 接通改词 GUI/JobManager：TXT/LRC 多编码解析、短句规划、三档歌词密度、Vevo2 批量生成、时长拼接、RVC/DDSP、混音和分层缓存。
+- 新增专用 `OpenCoverStudioWorker.exe`；Qt 隐藏启动仍保留 UTF-8 JSON Lines，修复 onefile TEMP 环境和中文路径乱码，实测 Vevo2 阶段取消无孤儿进程。
+- 音色导入新增自动/上传/暂不生成试听，上传支持 WAV/FLAC/MP3/M4A；音色卡增加管理入口，可改名称、简介、语言、Key、头像/试听并删除用户模型。
+- 修复 DDSP 用户配置必须命名 `config.yaml`、后端错误 GBK/UTF-8 解码、换混音误返旧缓存、模型哈希未进入转换缓存等问题。
+- 新增真实 CUDA/FP16、Compute Capability、RAM/磁盘检测；pytest 增至 24 项。
+- 组装并验证 22.75 GiB `Modern-LocalFull` 私有包；公开包继续排除不可再分发权重。

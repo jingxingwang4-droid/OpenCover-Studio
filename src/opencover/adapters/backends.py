@@ -68,6 +68,44 @@ class MarkerBackendAdapter:
         )
 
 
+class Vevo2Adapter:
+    backend_id = "vevo2"
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def status(self) -> BackendStatus:
+        metadata = _marker(self.root)
+        runtime = _runtime_python(self.root)
+        source = self.root / "Amphion" / "models" / "svc" / "vevo2" / "vevo2_utils.py"
+        model = self.root / "models" / "Vevo2"
+        required = [
+            model / "tokenizer" / "prosody_fvq512_6.25hz" / "model.safetensors",
+            model / "tokenizer" / "contentstyle_fvq16384_12.5hz" / "model.safetensors",
+            model / "contentstyle_modeling" / "posttrained" / "model.safetensors",
+            model / "acoustic_modeling" / "fm_emilia101k_singnet7k_repa" / "model.safetensors",
+            model / "vocoder" / "model.safetensors",
+        ]
+        installed = runtime.is_file() and source.is_file()
+        runnable = installed and all(path.is_file() for path in required) and metadata.get("smoke_test_passed") is True
+        if runnable:
+            detail = str(metadata.get("detail", "中文/日文真实推理已通过"))
+        elif installed:
+            missing = sum(not path.is_file() for path in required)
+            detail = f"环境存在，但缺少 {missing} 个必要权重或真实推理未通过"
+        else:
+            detail = "未安装 Vevo2 独立环境、源码和权重"
+        return BackendStatus("vevo2", "Vevo2", installed, runnable, str(metadata.get("commit", "未验证")), detail)
+
+    def generate_batch(self, request_file: Path, runner: Path) -> None:
+        status = self.status()
+        if not status.runnable:
+            raise BackendUnavailable(status.detail)
+        if not runner.is_file():
+            raise BackendUnavailable("Vevo2 运行脚本缺失")
+        run_checked([str(_runtime_python(self.root)), str(runner), str(request_file)], self.root, timeout=7200)
+
+
 class RVCAdapter:
     backend_id = "rvc"
 

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import app
 from opencover.adapters import backends
+from opencover.adapters.base import run_checked
 
 
 def test_source_launcher_restarts_with_project_pythonw(tmp_path: Path, monkeypatch) -> None:
@@ -54,3 +55,15 @@ def test_rvc_adapter_uses_real_cli_module(tmp_path: Path, monkeypatch) -> None:
 
     assert calls[0][0][1:4] == ["-m", "rvc.wrapper.cli.cli", "infer"]
     assert calls[0][1] == root
+
+
+def test_backend_error_includes_captured_stderr(tmp_path: Path) -> None:
+    script = tmp_path / "failure.py"
+    script.write_text("import sys; print('具体失败原因', file=sys.stderr); raise SystemExit(7)", encoding="utf-8")
+    try:
+        run_checked([sys.executable, str(script)], tmp_path)
+    except RuntimeError as exc:
+        assert "退出码 7" in str(exc)
+        assert "具体失败原因" in str(exc)
+    else:
+        raise AssertionError("后端失败必须抛出包含 stderr 的异常")

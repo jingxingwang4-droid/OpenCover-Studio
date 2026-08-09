@@ -7,6 +7,7 @@
 - DDSP-SVC 固定 commit `2e2ac5d...`；独立 Python 3.11.5 / PyTorch 2.9.1+cu130 环境已安装 ContentVec、RMVPE 与 PC-NSF-HiFiGAN，`main_reflow.py` 及应用 adapter 均完成真实推理。
 - Vevo2 位于 Amphion：官方推理权重固定到 `2674843...`，剔除 optimizer 后 4.28 GB；中文/日文 9.16 秒真实生成均通过，12 GB 显卡峰值分配约 7.91 GB。
 - GAME 固定 `4ad815c...`，官方 v1.0 small 模型真实导出 DiffSinger 可用的 MIDI/文本；DiffSinger 当前源码固定 `8a07f76...`，但仍需格式/许可匹配的 acoustic 歌声模型、G2P 和音素表。
+- Vevo2 已进入 GUI/JobManager 主路径：LRC/逐行短句、歌词密度检查、一次加载批量生成、时长拼接、RVC/DDSP 和混音均有真实打包 worker 证据。
 
 ## 祥子模型与试听源
 
@@ -14,9 +15,11 @@
 
 标准干声采用 Freesound 用户 owstu 的 “Female Vocal 01.wav”：页面明确标注 CC0，内容为真实女声清唱音阶。HQ preview 转为 9.008 秒、44.1 kHz、16-bit 单声道 `neutral_melody.wav`，SHA256 `de75b75a...256d`。RVC 与 DDSP 的 `preview.wav` 均由这段干声经各自目标模型实际推理生成；标准干声本身从不作为试听结果播放。
 
+另核验 `yuier0721/DDSP-SVC_6.3_pcr-kokkoro_2.0` revision `aca0687...` 的 `model_500.pt`：219,737,099 bytes、LFS SHA256 `cca82132...dbb`，unsafe globals 为空、weights-only 加载成功并生成 9.009 秒真实试听。模型卡虽标 MIT，训练数据来自角色衍生语音，故不据此推断角色/音频再分发权。
+
 ## 仍未解决的问题
 
-基础包要求的每个引擎 3～5 个可再分发初始音色仍未达到：当前只找到并验证祥子社区模型，且其条款不允许项目安全地公开再分发。Vevo2 与 GAME 固定样例已真实通过；DiffSinger 歌声模型和完整“对齐→切句→生成→拼接→音色转换”流水线仍缺失，因此改词页面保持禁用。
+基础包要求的每个引擎 3～5 个可再分发初始音色仍未达到：现有祥子、RVC 示例和普通 DDSP 社区模型均缺少足以公开打包的完整训练数据/角色权利证据。Vevo2 主路径已真实接入；DiffSinger 歌声模型与自动 ASR 强制对齐仍缺失，因此 fallback 和无 LRC 长歌曲保持未就绪。
 
 ## 发布门槛
 

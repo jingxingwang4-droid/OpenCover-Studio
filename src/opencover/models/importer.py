@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
+import subprocess
 import uuid
 import wave
 from pathlib import Path
@@ -14,9 +16,10 @@ from .registry import ModelRegistry
 from .schema import ModelImportSchema, VoiceModel
 
 RVC_SCHEMA = ModelImportSchema(required_files=[".pth", ".pt"], optional_files=[".index"], accepted_extensions=[".pth", ".pt", ".index"])
-DDSP_SCHEMA = ModelImportSchema(required_files=[".pt"], optional_files=[".yaml", ".yml", ".json"], accepted_extensions=[".pt", ".ckpt", ".yaml", ".yml", ".json"])
+DDSP_SCHEMA = ModelImportSchema(required_files=[".pt"], optional_files=[".yaml", ".yml"], accepted_extensions=[".pt", ".ckpt", ".yaml", ".yml"])
 MAX_WEIGHT_BYTES = 8 * 1024**3
 MAX_IMAGE_BYTES = 20 * 1024**2
+MAX_PREVIEW_BYTES = 200 * 1024**2
 
 
 def sha256(path: Path) -> str:
@@ -40,8 +43,9 @@ def _copy_exclusive(source: Path, target: Path) -> None:
 
 
 class ModelImporter:
-    def __init__(self, weights_root: Path):
+    def __init__(self, weights_root: Path, ffmpeg: Path | None = None):
         self.weights_root = weights_root
+        self.ffmpeg = ffmpeg
         self.registry = ModelRegistry(weights_root)
 
     def import_model(
@@ -75,16 +79,20 @@ class ModelImporter:
             hashes = {model_name: digest}
             if index_or_config:
                 extra = index_or_config.resolve(strict=True)
-                expected = {".index"} if engine == "rvc" else {".yaml", ".yml", ".json"}
+                expected = {".index"} if engine == "rvc" else {".yaml", ".yml"}
                 if extra.suffix.lower() not in expected:
                     raise ValueError("索引/配置文件类型与引擎不匹配")
-                extra_name = "model" + extra.suffix.lower()
+                extra_name = ("model.index" if engine == "rvc" else "config.yaml")
                 _copy_exclusive(extra, target / extra_name)
                 copied.append(target / extra_name)
                 hashes[extra_name] = sha256(extra)
                 (indexes if engine == "rvc" else configs).append(extra_name)
             avatar_name = self._avatar(avatar, target, display_name)
             preview_name = self._preview(preview, target) if preview else None
+            for asset in target.glob("avatar*"):
+                hashes[asset.name] = sha256(asset)
+            for asset in target.glob("preview*"):
+                hashes[asset.name] = sha256(asset)
             model = VoiceModel(
                 id=identity, display_name=display_name.strip() or identity, description=description.strip(),
                 engine=engine, model_files=[model_name], index_files=indexes, config_files=configs,
@@ -110,6 +118,7 @@ class ModelImporter:
                     image = ImageOps.exif_transpose(image).convert("RGB")
                     image = ImageOps.fit(image, (512, 512), method=Image.Resampling.LANCZOS)
                     image.save(output, "WEBP", quality=90)
+                _copy_exclusive(source, target / f"avatar_original{source.suffix.lower()}")
             except (UnidentifiedImageError, OSError) as exc:
                 raise ValueError("头像不是有效图片") from exc
         else:
@@ -123,13 +132,93 @@ class ModelImporter:
 
     def _preview(self, source: Path, target: Path) -> str:
         source = source.resolve(strict=True)
-        if source.suffix.lower() != ".wav":
-            raise ValueError("当前未安装 FFmpeg 时仅支持上传 WAV 试听")
-        try:
-            with wave.open(str(source), "rb") as wav:
-                if wav.getnchannels() not in {1, 2} or wav.getframerate() < 8000 or wav.getnframes() <= 0:
-                    raise ValueError("试听 WAV 参数异常")
-        except (wave.Error, EOFError) as exc:
-            raise ValueError("试听不是有效 WAV") from exc
-        _copy_exclusive(source, target / "preview.wav")
+        if source.suffix.lower() not in {".wav", ".flac", ".mp3", ".m4a"}:
+            raise ValueError("试听仅支持 WAV、FLAC、MP3 或 M4A")
+        if not 1 <= source.stat().st_size <= MAX_PREVIEW_BYTES:
+            raise ValueError("试听文件大小异常")
+        original = target / f"preview_original{source.suffix.lower()}"
+        _copy_exclusive(source, original)
+        output = target / "preview.wav"
+        if self.ffmpeg and self.ffmpeg.is_file():
+            result = subprocess.run(
+                [str(self.ffmpeg), "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
+                 "-t", "15", "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", str(output)],
+                capture_output=True, text=True, shell=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if result.returncode:
+                raise ValueError(result.stderr.strip() or "FFmpeg 无法解析试听音频")
+        else:
+            if source.suffix.lower() != ".wav":
+                raise ValueError("未安装 FFmpeg 时仅支持上传 WAV 试听")
+            try:
+                with wave.open(str(source), "rb") as wav:
+                    if wav.getnchannels() not in {1, 2} or wav.getframerate() < 8000 or wav.getnframes() <= 0:
+                        raise ValueError("试听 WAV 参数异常")
+            except (wave.Error, EOFError) as exc:
+                raise ValueError("试听不是有效 WAV") from exc
+            _copy_exclusive(source, output)
         return "preview.wav"
+
+    def update_model(
+        self, model_id: str, *, display_name: str, description: str, recommended_pitch: int,
+        languages: list[str], avatar: Path | None = None, preview: Path | None = None,
+        remove_preview: bool = False,
+    ) -> VoiceModel:
+        model = self.registry.get(model_id)
+        if model is None:
+            raise ValueError("找不到音色")
+        directory = model.directory(self.weights_root)
+        metadata_path = directory / "model.json"
+        temporary = directory / f".asset-update-{uuid.uuid4().hex}"
+        temporary.mkdir()
+        updates: dict[str, object] = {
+            "display_name": display_name.strip() or model.display_name,
+            "description": description.strip(),
+            "recommended_pitch": recommended_pitch,
+            "languages": [item.strip() for item in languages if item.strip()],
+        }
+        try:
+            if avatar is not None:
+                avatar_name = self._avatar(avatar, temporary, display_name)
+                for old in directory.glob("avatar_original.*"):
+                    old.unlink(missing_ok=True)
+                for asset in temporary.glob("avatar*"):
+                    os.replace(asset, directory / asset.name)
+                updates["avatar"] = avatar_name
+            if remove_preview:
+                for old in directory.glob("preview*"):
+                    old.unlink(missing_ok=True)
+                updates.update({"preview": None, "preview_source": "none", "preview_source_audio": None})
+            if preview is not None:
+                preview_name = self._preview(preview, temporary)
+                for old in directory.glob("preview*"):
+                    old.unlink(missing_ok=True)
+                for asset in temporary.glob("preview*"):
+                    os.replace(asset, directory / asset.name)
+                updates.update({"preview": preview_name, "preview_source": "uploaded", "preview_source_audio": preview.name})
+            changed = model.model_copy(update=updates)
+            hashes = {key: value for key, value in changed.sha256.items() if not key.startswith(("avatar", "preview"))}
+            for pattern in ("avatar*", "preview*"):
+                for asset in directory.glob(pattern):
+                    if asset.is_file():
+                        hashes[asset.name] = sha256(asset)
+            changed = changed.model_copy(update={"sha256": hashes})
+            partial = metadata_path.with_suffix(".json.part")
+            partial.write_text(changed.model_dump_json(indent=2), encoding="utf-8")
+            partial.replace(metadata_path)
+            return changed
+        finally:
+            shutil.rmtree(temporary, ignore_errors=True)
+
+    def delete_user_model(self, model_id: str) -> None:
+        model = self.registry.get(model_id)
+        if model is None:
+            raise ValueError("找不到音色")
+        if model.bundled:
+            raise ValueError("内置音色不能从音色管理页删除")
+        directory = model.directory(self.weights_root).resolve()
+        expected_parent = (self.weights_root / model.engine / "user_models").resolve()
+        if directory.parent != expected_parent:
+            raise ValueError("模型目录越界")
+        shutil.rmtree(directory)

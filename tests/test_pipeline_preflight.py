@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from opencover.models.schema import VoiceModel
-from opencover.pipelines.original_cover import CoverRequest, OriginalCoverPipeline, separation_cache_key
+from opencover.pipelines.original_cover import CoverRequest, OriginalCoverPipeline, cache_key, separation_cache_key
 
 
 def test_preflight_reports_missing_real_backends(tmp_path: Path) -> None:
@@ -23,3 +23,14 @@ def test_separation_cache_is_shared_across_engines_and_voices(tmp_path: Path) ->
     rvc = CoverRequest(source, "rvc", rvc_voice, 0, "balanced")
     ddsp = CoverRequest(source, "ddsp", ddsp_voice, 7, "vocal")
     assert separation_cache_key(rvc, checkpoint) == separation_cache_key(ddsp, checkpoint)
+
+
+def test_conversion_cache_ignores_mix_but_tracks_model_hash(tmp_path: Path) -> None:
+    source = tmp_path / "input.wav"; source.write_bytes(b"source")
+    first = VoiceModel(id="voice", display_name="Voice", engine="rvc", model_files=["model.pth"], sha256={"model.pth": "aaa"})
+    updated = first.model_copy(update={"sha256": {"model.pth": "bbb"}})
+    balanced = CoverRequest(source, "rvc", first, 0, "均衡")
+    vocal = CoverRequest(source, "rvc", first, 0, "人声更突出")
+    replaced = CoverRequest(source, "rvc", updated, 0, "均衡")
+    assert cache_key(balanced) == cache_key(vocal)
+    assert cache_key(balanced) != cache_key(replaced)
