@@ -1,5 +1,5 @@
 schema_version: 1
-last_updated: "2026-08-09"
+last_updated: "2026-08-10"
 resources:
   - resource_id: ffmpeg_windows_essentials
     type: runtime
@@ -28,9 +28,9 @@ resources:
     official_repository: https://github.com/ZFTurbo/Music-Source-Separation-Training
     source_page: https://github.com/ZFTurbo/Music-Source-Separation-Training
     download_url: https://github.com/ZFTurbo/Music-Source-Separation-Training/archive/refs/heads/main.zip
-    version: main (must pin before release)
+    version: main snapshot
     tag: ""
-    commit: ""
+    commit: e247dfe4abc1f17c69dff719207fe045dc04413a
     file_size: null
     sha256: ""
     license: MIT
@@ -38,28 +38,48 @@ resources:
     install_directory: external_backends/msst/Music-Source-Separation-Training
     backend: msst
     last_verified: "2026-08-09"
-    status: researched_not_downloaded
-    notes: 官方 inference.py 接口已核验；代码、环境、配置、权重均未在本机安装。
+    status: source_downloaded
+    notes: 官方 inference.py 接口已核验；2026-08-09 shallow clone 完成，环境与权重另行记录。
 
   - resource_id: msst_vocal_model
     type: model
-    name: MSST vocal separation checkpoint
-    author: unknown until a specific official release asset is selected
+    name: MSST MDX23C vocal separation checkpoint SDR 10.17
+    author: ZFTurbo / MVSep contributors
     official_repository: https://github.com/ZFTurbo/Music-Source-Separation-Training
-    source_page: https://github.com/ZFTurbo/Music-Source-Separation-Training?tab=readme-ov-file#pre-trained-models
-    download_url: ""
-    version: ""
-    tag: ""
+    source_page: https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.0
+    download_url: https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/download/v1.0.0/model_vocals_mdx23c_sdr_10.17.ckpt
+    version: SDR 10.17
+    tag: v1.0.0
     commit: ""
-    file_size: null
-    sha256: ""
-    license: unverified
+    file_size: 448101203
+    sha256: 49d51472769e34a2501cd1da782346a3212555c3a5619fc2c53507445528d816
+    license: MIT repository; model training-data terms not separately stated
     redistribution_allowed: false
-    install_directory: external_backends/msst/models
+    install_directory: external_backends/msst/models/model_vocals_mdx23c_sdr_10.17.ckpt
     backend: msst
     last_verified: "2026-08-09"
-    status: blocked_license_and_identity
-    notes: 未选定具体模型前不捏造下载地址、作者、许可证或哈希。
+    status: installed_verified
+    notes: 官方仓库 pretrained_models.md 直接列出的 release 资产；已完成断点下载与 SHA256 校验。暂不随源码 Git 再分发。
+
+  - resource_id: msst_mdx23c_vocal_config
+    type: model_config
+    name: MSST MDX23C vocal separation config
+    author: ZFTurbo / MVSep contributors
+    official_repository: https://github.com/ZFTurbo/Music-Source-Separation-Training
+    source_page: https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.0
+    download_url: https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/download/v1.0.0/config_vocals_mdx23c.yaml
+    version: v1.0.0
+    tag: v1.0.0
+    commit: ""
+    file_size: 1197
+    sha256: 9b2bf974ee274439ff29b4be4c26e4bc2b9e339cf01a5f6c0c6d5fecd00d4c20
+    license: MIT
+    redistribution_allowed: true
+    install_directory: external_backends/msst/models/config_vocals_mdx23c.yaml
+    backend: msst
+    last_verified: "2026-08-09"
+    status: installed_verified
+    notes: 官方 release 配置；已校验并与上方 checkpoint 配套安装。
 
   - resource_id: rvc_cli_source
     type: backend_source
@@ -68,9 +88,9 @@ resources:
     official_repository: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
     source_page: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
     download_url: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion/archive/refs/heads/main.zip
-    version: development main (must pin before release)
+    version: 0.3.5 development snapshot
     tag: ""
-    commit: ""
+    commit: 7b284a634667c34103eaaeed972b48ccdb4b893e
     file_size: null
     sha256: ""
     license: MIT
@@ -78,8 +98,68 @@ resources:
     install_directory: external_backends/rvc
     backend: rvc
     last_verified: "2026-08-09"
-    status: researched_not_downloaded
-    notes: 官方提供 rvc infer CLI；尚未安装依赖和基础编码器权重。
+    status: inference_smoke_tested
+    notes: 官方提供 rvc infer CLI；2026-08-10 已在 Python 3.10 独立环境安装，PyTorch 2.9.1+cu130 在 RTX 5070 Ti 上完成《春日影》30 秒真实推理；为兼容 Windows/PyTorch 2.9/PyAV 12 应用了可审计的最小补丁。
+
+  - resource_id: rvc_hubert_base
+    type: model
+    name: RVC HuBERT base feature encoder
+    author: RVC-Project / lj1995
+    official_repository: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI
+    source_page: https://huggingface.co/lj1995/VoiceConversionWebUI/blob/main/hubert_base.pt
+    download_url: https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/hubert_base.pt
+    version: main snapshot
+    tag: ""
+    commit: ""
+    file_size: 189507909
+    sha256: f54b40fd2802423a5643779c4861af1e9ee9c1564dc9d32f54f20b5ffba7db96
+    license: MIT repository/model card
+    redistribution_allowed: false
+    install_directory: external_backends/rvc/models/hubert_base.pt
+    backend: rvc
+    last_verified: "2026-08-10"
+    status: installed_verified
+    notes: RVC 官方文档列出的推理必需基础编码器；已断点下载并校验 SHA256，不随源码 Git 再分发。
+
+  - resource_id: rvc_rmvpe
+    type: model
+    name: RVC RMVPE pitch extractor
+    author: yxlllc / RVC-Boss
+    official_repository: https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI
+    source_page: https://huggingface.co/lj1995/VoiceConversionWebUI/blob/main/rmvpe.pt
+    download_url: https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt
+    version: main snapshot
+    tag: ""
+    commit: ""
+    file_size: 181184272
+    sha256: 6d62215f4306e3ca278246188607209f09af3dc77ed4232efdd069798c4ec193
+    license: MIT repository/model card
+    redistribution_allowed: false
+    install_directory: external_backends/rvc/models/rmvpe.pt
+    backend: rvc
+    last_verified: "2026-08-10"
+    status: installed_verified
+    notes: RVC 官方文档列出的 RMVPE 推理权重；已下载并校验 SHA256，不随源码 Git 再分发。
+
+  - resource_id: rvc_official_demo_voice
+    type: voice_model
+    name: RVC official repository demo voice (白菜357k)
+    author: lj1995 repository contributor
+    official_repository: https://huggingface.co/lj1995/VoiceConversionWebUI
+    source_page: https://huggingface.co/lj1995/VoiceConversionWebUI/blob/main/weights/%E7%99%BD%E8%8F%9C357k.pt
+    download_url: https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/weights/%E7%99%BD%E8%8F%9C357k.pt
+    version: main snapshot
+    tag: ""
+    commit: ""
+    file_size: 72645217
+    sha256: d309e8056dff08d33b30854839a9b9c36dfb612bf5971c070f552bde18158a55
+    license: MIT model repository; training-data provenance not separately stated
+    redistribution_allowed: false
+    install_directory: external_backends/rvc/models/rvc_official_demo_voice.pt
+    backend: rvc
+    last_verified: "2026-08-10"
+    status: inference_smoke_tested_only
+    notes: 已下载并校验 SHA256；已对《春日影》分离人声 20–50 秒片段完成真实 RVC 推理。仅用于证明链路可运行，不作为祥子音色、不进入发布包、不生成冒充祥子的试听。
 
   - resource_id: ddsp_svc_source
     type: backend_source
@@ -88,9 +168,9 @@ resources:
     official_repository: https://github.com/yxlllc/DDSP-SVC
     source_page: https://github.com/yxlllc/DDSP-SVC
     download_url: https://github.com/yxlllc/DDSP-SVC/archive/refs/heads/master.zip
-    version: 5.x repository state (must pin before release)
+    version: 5.x repository snapshot
     tag: ""
-    commit: ""
+    commit: 2e2ac5d34ffe08cb1a03fdffd51742e62b8bcf8c
     file_size: null
     sha256: ""
     license: MIT
@@ -98,8 +178,8 @@ resources:
     install_directory: external_backends/ddsp/DDSP-SVC
     backend: ddsp
     last_verified: "2026-08-09"
-    status: researched_not_downloaded
-    notes: 官方 README 明确列出 Windows Python 3.11/CUDA 13 组合和 main_reflow.py 推理接口。
+    status: source_downloaded
+    notes: 官方 README 明确列出 Windows Python 3.11/CUDA 13 组合和 main_reflow.py 推理接口；2026-08-09 shallow clone 完成。
 
   - resource_id: amphion_vevo2_source
     type: optional_backend_source
@@ -220,3 +300,23 @@ resources:
     last_verified: "2026-08-09"
     status: blocked_legal_source
     notes: 尚未找到同时满足真实无伴奏歌声、8–15 秒和明确再分发权的来源；不以合成音、静音或随机声音替代。
+
+  - resource_id: public_domain_separation_test
+    type: test_audio
+    name: Irene Dunne singing in Love Affair
+    author: Irene Dunne; excerpt from Love Affair (1939)
+    official_repository: https://commons.wikimedia.org/
+    source_page: https://commons.wikimedia.org/wiki/File:Irene_Dunne_singing_in_Love_Affair.ogg
+    download_url: https://commons.wikimedia.org/wiki/Special:Redirect/file/Irene%20Dunne%20singing%20in%20Love%20Affair.ogg
+    version: Wikimedia Commons current file
+    tag: ""
+    commit: ""
+    file_size: 332923
+    sha256: b30c28c78805b859bc38dd0eb8c767bdffdaacdc9ff658b92126aebd883ade99
+    license: Public domain (US copyright not renewed; see source page)
+    redistribution_allowed: true
+    install_directory: downloads/public_domain_separation_test.ogg
+    backend: test
+    last_verified: "2026-08-10"
+    status: downloaded_verified
+    notes: 25.944 秒、48 kHz 双声道 Vorbis 真实歌唱片段；已校验 SHA256，用于分离 smoke test，不作为音色试听或模型输出。

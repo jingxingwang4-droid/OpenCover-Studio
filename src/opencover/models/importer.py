@@ -13,7 +13,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from .registry import ModelRegistry
 from .schema import ModelImportSchema, VoiceModel
 
-RVC_SCHEMA = ModelImportSchema(required_files=[".pth"], optional_files=[".index"], accepted_extensions=[".pth", ".index"])
+RVC_SCHEMA = ModelImportSchema(required_files=[".pth", ".pt"], optional_files=[".index"], accepted_extensions=[".pth", ".pt", ".index"])
 DDSP_SCHEMA = ModelImportSchema(required_files=[".pt"], optional_files=[".yaml", ".yml", ".json"], accepted_extensions=[".pt", ".ckpt", ".yaml", ".yml", ".json"])
 MAX_WEIGHT_BYTES = 8 * 1024**3
 MAX_IMAGE_BYTES = 20 * 1024**2

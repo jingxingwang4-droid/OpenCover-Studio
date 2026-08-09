@@ -31,9 +31,15 @@ def main(request_file: str) -> int:
         if issues:
             emit("error", code="PREFLIGHT_FAILED", message="；".join(issues))
             return 2
-        # No backend output may be synthesized until every resource has passed its own smoke test.
-        emit("error", code="BACKEND_NOT_VALIDATED", message="组件存在但尚未完成本机真实推理验证，已安全停止")
-        return 3
+        job_dir = Path(request_file).resolve().parent
+
+        def report(stage: str, value: int, message: str) -> None:
+            emit("status", message=message)
+            emit("progress", stage=stage, value=value)
+
+        output = pipeline.run(request, job_dir, report)
+        emit("result", path=str(output))
+        return 0
     except Exception as exc:
         emit("error", code="WORKER_ERROR", message=str(exc))
         return 1

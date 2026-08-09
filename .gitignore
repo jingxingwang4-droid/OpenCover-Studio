@@ -1,6 +1,7 @@
 downloads/
 external_backends/
 ffmpeg/
+assets/audio/
 runtimes/
 weights/
 release_private/

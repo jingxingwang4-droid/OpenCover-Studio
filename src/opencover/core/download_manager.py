@@ -43,7 +43,9 @@ def download_file(
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_suffix(target.suffix + ".part")
     downloaded = partial.stat().st_size if partial.exists() else 0
-    headers = {"Range": f"bytes={downloaded}-"} if downloaded else {}
+    headers = {"User-Agent": "OpenCoverStudio/0.1 (local desktop resource downloader; https://github.com/)"}
+    if downloaded:
+        headers["Range"] = f"bytes={downloaded}-"
     digest = hashlib.sha256()
     if downloaded:
         with partial.open("rb") as existing:

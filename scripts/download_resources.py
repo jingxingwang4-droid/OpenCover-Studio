@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import shutil
 import sys
 from pathlib import Path
 
@@ -39,13 +40,18 @@ def main() -> int:
         digest = hashlib.sha256(cache.read_bytes()).hexdigest()
         print(f"SHA256 {digest}")
         if args.install:
-            if cache.suffix.lower() != ".zip":
-                raise DownloadError("当前自动安装仅支持 ZIP")
             destination = ROOT / item["install_directory"]
-            if destination.exists() and any(destination.iterdir()):
-                raise DownloadError("安装目录非空，不会覆盖")
-            safe_extract_zip(cache, destination)
-            print(f"已安全解压到 {destination}；未执行包内脚本")
+            if cache.suffix.lower() == ".zip":
+                if destination.exists() and any(destination.iterdir()):
+                    raise DownloadError("安装目录非空，不会覆盖")
+                safe_extract_zip(cache, destination)
+                print(f"已安全解压到 {destination}；未执行包内脚本")
+            else:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if destination.exists():
+                    raise DownloadError("安装目标已存在，不会覆盖")
+                shutil.copy2(cache, destination)
+                print(f"已校验并安装到 {destination}")
     except DownloadError as exc:
         print(f"失败：{exc}", file=sys.stderr)
         return 2
