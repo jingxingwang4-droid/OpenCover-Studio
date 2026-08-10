@@ -18,13 +18,19 @@
 
 另核验 `yuier0721/DDSP-SVC_6.3_pcr-kokkoro_2.0` revision `aca0687...` 的 `model_500.pt`：219,737,099 bytes、LFS SHA256 `cca82132...dbb`，unsafe globals 为空、weights-only 加载成功并生成 9.009 秒真实试听。模型卡虽标 MIT，训练数据来自角色衍生语音，故不据此推断角色/音频再分发权。
 
+## 可再分发 RVC 初始音色
+
+2026-08-10 固定并验证三套公开内置 RVC。`Saisho-Utane/Saisho-Model-RVC` revision `7a61b17...` 的模型卡明确说明使用作者自有声音训练，并以 CC BY 4.0 允许带署名的公开、修改、商业使用与再分发；57,577,658-byte `model.pth` SHA256 为 `82312a29...f3d35`。`Nekochu/RVC-VCTK_Voice-sample` revision `005c2f9...` 明确训练自 VCTK，并把模型仓库标为 Apache-2.0；选择 p231 女声与 p226 男声两个 250-epoch checkpoint，SHA256 分别为 `26d3c122...e372`、`3c4c2e8e...6693`。CSTR VCTK 原始语料为 CC BY 4.0，作者/数据集署名进入第三方声明。
+
+三个 checkpoint 的 unsafe globals 都为空，`torch.load(weights_only=True)` 均返回含 `config`/`weight` 的标准 RVC 字典。为减小包体并覆盖“无 index 仍可使用”，三个音色都走 RMVPE、`index_rate=0`；CC0 标准干声分别得到 9.000 秒的 48/40/40 kHz 有限非静音输出，SHA256 `52af2f59...e440`、`29deafb9...12c2`、`d651b9c6...0a9e`，且互不相同、不等于输入。头像不采用模型仓库人物图，而由项目生成 512×512 的 S/F/M 占位图。`scripts/install_bundled_rvc_voices.py` 可从固定 revision 断点下载、校验大小/SHA256、执行 checkpoint 安全扫描并可选重建试听；公开构建只复制这三个 ID。
+
 ## 仍未解决的问题
 
-基础包要求的每个引擎 3～5 个可再分发初始音色仍未达到：现有祥子、RVC 示例和普通 DDSP 社区模型均缺少足以公开打包的完整训练数据/角色权利证据。Vevo2 主路径和中文 GAME + DiffSinger 回退均已真实接入，但 DiffSinger 旧版权重未给出独立模型/数据许可，故只在本机完整包可用。无 LRC 原歌词现可自动强制对齐；非中文 DiffSinger 回退仍未实现，且真实歌声的歌词准确性仍取决于用户文本和录音质量。
+RVC 已达到三套可再分发初始音色；DDSP 仍未达到 3～5 套。当前可找到并适配的 DDSP 社区音色主要基于商业角色语音，仓库的 MIT 标签不足以证明训练声音与角色权利，故只作本机兼容测试。Vevo2 主路径和中文 GAME + DiffSinger 回退均已真实接入，但 DiffSinger 旧版权重未给出独立模型/数据许可，故只在本机完整包可用。无 LRC 原歌词现可自动强制对齐；非中文 DiffSinger 回退仍未实现，且真实歌声的歌词准确性仍取决于用户文本和录音质量。
 
 2026-08-10 追加复核了三个方向。WhisperX 是 BSD-2-Clause 的语音 ASR/词级对齐工具，但没有直接把用户给定完整歌词强制对齐到音频的同等接口；活跃的 whisper-timestamped 是 AGPL-3.0，也以转写后估时为主。Stable-ts 虽在 2026-05-30 归档，却是 MIT 且明确支持 `model.align(audio, plain_text, language)`，因此固定最后提交、隔离安装并以真实音频验证，界面会披露其可选组件状态。YingMusic-Singer-Plus 官方方案直接接受旋律音频和新歌词，不要求人工音素级对齐；源码 HEAD `baa409c...`，官方模型 revision `9b3f444...`，五个主要 checkpoint 合计 13,052,111,592 bytes。其代码/主权重为 CC BY 4.0，但 Stable Audio VAE 使用单独的 Stability AI Community License，官方 Windows 预构建仍标记 Coming soon，批处理示例还面向 4/8 GPU，故只登记为后续候选。
 
-RVC 初始音色复核仍未找到能同时证明“模型文件许可、训练声音权利、允许随软件再分发”的 3～5 个音色。AEmotionStudio 仓库是 RVC 底模转换而非独立角色音色；Razer112/Public_Models 的专用条款明确禁止未经书面许可再分发；其他角色/真人仓库仅标 MIT 不能自动授予声音和训练数据权利。基础公开包继续保守留空，避免把仓库标签当成声音授权。
+RVC 复核同时排除了 AEmotionStudio（底模转换而非独立音色）、Razer112/Public_Models（专用条款禁止未经书面许可再分发）以及只有代码仓库 MIT 标签、没有声音授权的角色/真人模型。DDSP-SVC 标签下的公开候选仅有基础依赖仓库和商业角色衍生模型，尚未找到三套像 Saisho/VCTK 一样能同时证明 checkpoint 许可与训练声音来源的可适配权重；公开 DDSP 初始列表继续留空，而不是把仓库标签冒充声音授权。
 
 ## 发布门槛
 

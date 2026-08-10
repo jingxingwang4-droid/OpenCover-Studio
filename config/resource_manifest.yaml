@@ -161,6 +161,96 @@ resources:
     status: installed_preview_and_inference_tested_local_only
     notes: 已下载并校验 SHA256；已对《春日影》分离人声 20–50 秒片段完成真实 RVC 推理，并用 CC0 标准干声生成独立 9.000 秒试听，preview SHA256 ad78c1dcf97358825796d9dbbe1f195faf4fcd55b1165ef3f20da02a1f80cbb0。训练数据条款未单列，不进入发行包。
 
+  - resource_id: saisho_utane_rvc_voice
+    type: voice_model
+    name: Saisho Utane RVC v2 voice
+    author: Saisho Utane
+    official_repository: https://huggingface.co/Saisho-Utane/Saisho-Model-RVC
+    source_page: https://huggingface.co/Saisho-Utane/Saisho-Model-RVC/tree/7a61b17e4f014fc5013a489f2b5cd3a7ee9e2b1a
+    download_url: https://huggingface.co/Saisho-Utane/Saisho-Model-RVC/resolve/7a61b17e4f014fc5013a489f2b5cd3a7ee9e2b1a/model.pth
+    version: RVC v2
+    tag: ""
+    commit: 7a61b17e4f014fc5013a489f2b5cd3a7ee9e2b1a
+    file_size: 57577658
+    sha256: 82312a29a3996a451aaa3d3776566cec85b47b5414fce53da82b2d66b04f3d35
+    license: CC BY 4.0; attribution required to Saisho Utane
+    redistribution_allowed: true
+    install_directory: weights/rvc/bundled/saisho_utane_rvc/model.pth
+    backend: rvc
+    last_verified: "2026-08-10"
+    status: installed_preview_and_inference_tested_redistributable
+    bundled_default: true
+    voice_id: saisho_utane_rvc
+    avatar_letter: S
+    voice_metadata:
+      display_name: Saisho Utane（RVC）
+      description: 作者以自有声音训练并公开授权的西班牙语 RVC v2 音色。
+      recommended_pitch: 0
+      languages: [es]
+      featured: true
+      sort_order: 10
+    notes: 模型卡明确说明由作者自有声音训练，并允许在署名条件下公开、商业使用与再分发；checkpoint unsafe globals 为空且 weights_only 加载通过。CC0 标准干声真实试听为 9.000 秒/48 kHz，SHA256 52af2f5965bcd32fc0f34a039fc523cd2e3ab91dc5363151a58c2a14489de440。
+
+  - resource_id: vctk_p231_rvc_voice
+    type: voice_model
+    name: VCTK p231 female RVC voice
+    author: Nekochu; VCTK creators Christophe Veaux, Junichi Yamagishi, Kirsten MacDonald
+    official_repository: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample
+    source_page: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample/tree/005c2f948ee9dafd7e3aa7f261b4c3a24beebeef/F/p231
+    download_url: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample/resolve/005c2f948ee9dafd7e3aa7f261b4c3a24beebeef/F/p231/Fp231.pth
+    version: RVC v2 / 250 epochs
+    tag: ""
+    commit: 005c2f948ee9dafd7e3aa7f261b4c3a24beebeef
+    file_size: 55193241
+    sha256: 26d3c122a6429a0a1925cb12098408b9d41967089e08098b95a7b4f593e2e372
+    license: Apache-2.0 model repository; VCTK corpus CC BY 4.0
+    redistribution_allowed: true
+    install_directory: weights/rvc/bundled/vctk_p231_rvc/model.pth
+    backend: rvc
+    last_verified: "2026-08-10"
+    status: installed_preview_and_inference_tested_redistributable
+    bundled_default: true
+    voice_id: vctk_p231_rvc
+    avatar_letter: F
+    voice_metadata:
+      display_name: VCTK p231 女声（RVC）
+      description: 使用 CC BY 4.0 VCTK p231 说话人语料训练的英语女声音色。
+      recommended_pitch: 0
+      languages: [en]
+      featured: true
+      sort_order: 20
+    notes: 仓库模型卡固定 Apache-2.0 并明确训练集为 VCTK；p231 为英语女声。无 index 路径真实试听 9.000 秒/40 kHz，SHA256 29deafb93e896e1e7eeab3b1771b56e3fe26f17f113a6be9f611b92ca77212c2。
+
+  - resource_id: vctk_p226_rvc_voice
+    type: voice_model
+    name: VCTK p226 male RVC voice
+    author: Nekochu; VCTK creators Christophe Veaux, Junichi Yamagishi, Kirsten MacDonald
+    official_repository: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample
+    source_page: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample/tree/005c2f948ee9dafd7e3aa7f261b4c3a24beebeef/M/p226
+    download_url: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample/resolve/005c2f948ee9dafd7e3aa7f261b4c3a24beebeef/M/p226/Mp226.pth
+    version: RVC v2 / 250 epochs
+    tag: ""
+    commit: 005c2f948ee9dafd7e3aa7f261b4c3a24beebeef
+    file_size: 55193241
+    sha256: 3c4c2e8ea977d7c08793126aace4baa47028b4c1bf7cd46ae5a9c359b0216693
+    license: Apache-2.0 model repository; VCTK corpus CC BY 4.0
+    redistribution_allowed: true
+    install_directory: weights/rvc/bundled/vctk_p226_rvc/model.pth
+    backend: rvc
+    last_verified: "2026-08-10"
+    status: installed_preview_and_inference_tested_redistributable
+    bundled_default: true
+    voice_id: vctk_p226_rvc
+    avatar_letter: M
+    voice_metadata:
+      display_name: VCTK p226 男声（RVC）
+      description: 使用 CC BY 4.0 VCTK p226 说话人语料训练的英语男声音色。
+      recommended_pitch: -12
+      languages: [en]
+      featured: true
+      sort_order: 30
+    notes: 仓库模型卡固定 Apache-2.0 并明确训练集为 VCTK；p226 为英语男声。无 index、推荐 -12 半音路径真实试听 9.000 秒/40 kHz，SHA256 d651b9c6e496b45dd3ec79cf367b7c9377ac3fc6c5f4a6da520587a1f9230a9e。
+
   - resource_id: ddsp_svc_source
     type: backend_source
     name: DDSP-SVC

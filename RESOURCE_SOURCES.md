@@ -6,6 +6,9 @@
 - MSST：https://github.com/ZFTurbo/Music-Source-Separation-Training
 - RVC CLI：https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 - RVC 官方基础模型/演示权重：https://huggingface.co/lj1995/VoiceConversionWebUI
+- Saisho Utane 自有声音 RVC（CC BY 4.0）：https://huggingface.co/Saisho-Utane/Saisho-Model-RVC
+- VCTK p231/p226 RVC（模型仓库 Apache-2.0）：https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample
+- CSTR VCTK 语料与原始许可：https://datashare.ed.ac.uk/handle/10283/3443
 - DDSP-SVC：https://github.com/yxlllc/DDSP-SVC
 - DDSP ContentVec：https://huggingface.co/lengyue233/content-vec-best
 - DDSP RMVPE：https://github.com/yxlllc/RMVPE/releases/tag/230917

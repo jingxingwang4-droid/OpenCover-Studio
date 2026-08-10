@@ -35,6 +35,8 @@ RVC/DDSP 转换若捕获到明确的 CUDA OOM，会等待失败的后端子进�
 
 `assets/preview_sources/neutral_melody.wav` 来自 owstu 在 Freesound 发布的 CC0 清唱素材，9.008 秒。当前本机另安装并验证了 TogetsuDo 的丰川祥子 RVC/DDSP 社区模型；它们均为非官方且没有明确再分发许可，因此被 `.gitignore` 排除，也不会打入公开发行包。资源真实状态详见 `config/resource_manifest.yaml` 与 `docs/RESOURCE_RESEARCH.md`。
 
+公开包固定内置三套可再分发 RVC 音色：作者自有声音的 Saisho Utane，以及使用 VCTK CC BY 4.0 语料训练的 p231 女声和 p226 男声。三者均已通过固定 LFS SHA256、checkpoint unsafe-global/`weights_only` 检查，并分别由标准干声生成了不同的真实试听；不使用仓库人物图，头像是项目生成的 512×512 首字母占位图。源码环境可运行 `.venv\Scripts\python.exe scripts\install_bundled_rvc_voices.py --generate-previews` 复现下载、安装和试听验收。DDSP 仍没有达到同等训练声音权利证据的 3～5 套公开内置音色，不会用角色模型凑数。
+
 若 `assets/背景1.*` 存在，GUI 优先将其用作固定背景并添加浅色内容蒙层；背景 2/3 保留但不轮播。`assets/祥子音色头像.jpg` 用于尚未安装的祥子固定音色占位卡，不代表相关 RVC/DDSP 权重已获得授权或通过推理。
 
 ## 构建
@@ -46,7 +48,9 @@ RVC/DDSP 转换若捕获到明确的 CUDA OOM，会等待失败的后端子进�
 
 构建脚本生成 windowed GUI 和独立 `OpenCoverStudioWorker.exe`。Qt 以 `CREATE_NO_WINDOW` 启动 worker，因此没有可见终端，同时保留 UTF-8 JSON Lines 进度、SQLite 状态和进程树取消。公开 Modern/Legacy 阶段包含 GUI、worker、顶层 assets/config、FFmpeg 与 CC0 试听源；受限制权重不进入公开包。
 
-`./scripts/build_local_full.ps1 Modern` 另可在 `release_private/` 组装当前机器专用的约 26.58 GiB 完整目录；它包含不可再分发的社区模型、Vevo2、GAME、旧版 DiffSinger 权重，以及可再分发但体积较大的独立 Whisper/CUDA 对齐环境，必须遵守 `LOCAL_ONLY_FULL_PACKAGE.txt`，不能把其中受限模型公开上传。该私有包的冻结 worker 已完成 Vevo2 主路径、GAME + DiffSinger 回退和无时间戳歌词强制对齐端到端测试。Legacy 尚无实体旧显卡/CUDA 11.8 验收，不宣称已兼容。
+构建时对三套公开 RVC 音色使用固定 ID 白名单，并重新核对元数据许可标记与模型、头像、试听 SHA256；缺一项就终止构建。它不会递归复制整个本机 `weights/`，因此祥子和其他本机社区模型不会意外进入公开包。
+
+`./scripts/build_local_full.ps1 Modern` 另可在 `release_private/` 组装当前机器专用的约 26.769 GiB 完整目录；它包含不可再分发的社区模型、Vevo2、GAME、旧版 DiffSinger 权重，以及可再分发但体积较大的独立 Whisper/CUDA 对齐环境，必须遵守 `LOCAL_ONLY_FULL_PACKAGE.txt`，不能把其中受限模型公开上传。该私有包的冻结 worker 已完成 Vevo2 主路径、GAME + DiffSinger 回退和无时间戳歌词强制对齐端到端测试。Legacy 尚无实体旧显卡/CUDA 11.8 验收，不宣称已兼容。
 
 源码环境可运行 `./scripts/install_alignment.ps1` 安装固定版本的对齐扩展；脚本使用独立 Python 3.10 环境、核验官方 Whisper 模型 SHA256，并且只有真实 CUDA 强制对齐 smoke 通过后才写入可用 marker。Stable-ts 上游已于 2026-05-30 归档，此维护风险会保留在组件说明中。
 

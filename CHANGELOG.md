@@ -36,3 +36,6 @@
 - 关闭并行 GPU 重载后，用全新歌词完成冻结 Vevo2→丰川祥子 RVC→混音未缓存重试，67.4 秒产生真实非静音 WAV。
 - 新增隔离的 Stable-ts 2.19.1 + OpenAI Whisper 20250625/base 歌词强制对齐组件；无时间戳原歌词现自动对齐到 MSST 人声并独立缓存，行数/正时长/递增校验失败时要求 LRC。
 - 官方 JFK 22 词、真实《春日影》日语歌声四行、源码与冻结 GAME→DiffSinger→祥子 RVC 完整链均通过；pytest 增至 37 项。
+- 新增三套许可与训练来源可核验的公开 RVC 初始音色：Saisho Utane（作者自有声音/CC BY 4.0）、VCTK p231 女声与 p226 男声（模型仓库 Apache-2.0、语料 CC BY 4.0）；固定 revision、大小和 LFS SHA256，checkpoint 安全加载与三份真实试听均通过。
+- 新增可复现的内置音色安装器；公开构建使用严格 ID 白名单并复核模型/头像/试听哈希，防止祥子等本机受限模型通过通配复制进入 Modern/Legacy 包。
+- Modern/Legacy 公开包重建为 804.2 MiB/482 文件，三套白名单音色逐文件复核通过；两套冻结 GUI 启动与 Worker 缺参协议 smoke 均通过，pytest 增至 38 项。
