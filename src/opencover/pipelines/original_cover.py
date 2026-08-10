@@ -8,6 +8,7 @@ from typing import Callable
 
 from opencover.adapters.backends import DDSPAdapter, MSSTAdapter, RVCAdapter
 from opencover.audio.processing import export_audio, ffmpeg_path, mix_tracks, normalize_input
+from opencover.core.retry_policy import convert_with_oom_retry
 from opencover.models.schema import VoiceModel
 
 
@@ -133,12 +134,13 @@ class OriginalCoverPipeline:
             report("convert", 58, f"正在使用 {request.engine.upper()} 转换音色")
             if request.engine == "rvc":
                 index = model_dir / request.voice.index_files[0] if request.voice.index_files else None
-                self.rvc.convert(vocals, converted_raw, model, request.pitch, index)
+                converter = lambda source, target: self.rvc.convert(source, target, model, request.pitch, index)
             elif request.engine == "ddsp":
                 config = model_dir / request.voice.config_files[0] if request.voice.config_files else None
-                self.ddsp.convert(vocals, converted_raw, model, request.pitch, config)
+                converter = lambda source, target: self.ddsp.convert(source, target, model, request.pitch, config)
             else:
                 raise RuntimeError(f"不支持的音色引擎：{request.engine}")
+            convert_with_oom_retry(vocals, converted_raw, converter, lambda message: report("convert", 62, message))
             conversion_cache.parent.mkdir(parents=True, exist_ok=True)
             partial = conversion_cache.with_suffix(".wav.part")
             shutil.copy2(converted_raw, partial); partial.replace(conversion_cache)

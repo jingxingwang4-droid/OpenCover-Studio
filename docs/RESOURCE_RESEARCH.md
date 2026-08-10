@@ -6,7 +6,7 @@
 - RVC CLI 固定 commit `7b284a6...`，Fairseq fork 固定 `ff08af2...`；HuBERT、RMVPE 和官方模型仓库演示权重均已记录 SHA256，30 秒真实 CUDA 推理成功。
 - DDSP-SVC 固定 commit `2e2ac5d...`；独立 Python 3.11.5 / PyTorch 2.9.1+cu130 环境已安装 ContentVec、RMVPE 与 PC-NSF-HiFiGAN，`main_reflow.py` 及应用 adapter 均完成真实推理。
 - Vevo2 位于 Amphion：官方推理权重固定到 `2674843...`，剔除 optimizer 后 4.28 GB；中文/日文 9.16 秒真实生成均通过，12 GB 显卡峰值分配约 7.91 GB。
-- GAME 固定 `4ad815c...`，官方 v1.0 small 模型真实导出 DiffSinger 可用的 MIDI/文本；DiffSinger 当前源码固定 `8a07f76...`，但仍需格式/许可匹配的 acoustic 歌声模型、G2P 和音素表。
+- GAME 固定 `4ad815c...`，官方 v1.0 small 模型真实导出 DiffSinger 可用的 MIDI/文本。当前 OpenVPI DiffSinger 仍不附模型；为完成可核验回退，另固定原版官方仓库所链接的 Hugging Face demo commit `6a08cdd...`，使用其中 OpenCpop acoustic、pitch extractor、NSF-HiFiGAN 和 pypinyin 0.43.0，已完成固定样例、GAME 动态旋律和完整音色转换三层实测。
 - Vevo2 已进入 GUI/JobManager 主路径：LRC/逐行短句、歌词密度检查、一次加载批量生成、时长拼接、RVC/DDSP 和混音均有真实打包 worker 证据。
 
 ## 祥子模型与试听源
@@ -19,7 +19,7 @@
 
 ## 仍未解决的问题
 
-基础包要求的每个引擎 3～5 个可再分发初始音色仍未达到：现有祥子、RVC 示例和普通 DDSP 社区模型均缺少足以公开打包的完整训练数据/角色权利证据。Vevo2 主路径已真实接入；DiffSinger 歌声模型与自动 ASR 强制对齐仍缺失，因此 fallback 和无 LRC 长歌曲保持未就绪。
+基础包要求的每个引擎 3～5 个可再分发初始音色仍未达到：现有祥子、RVC 示例和普通 DDSP 社区模型均缺少足以公开打包的完整训练数据/角色权利证据。Vevo2 主路径和中文 GAME + DiffSinger 回退均已真实接入，但 DiffSinger 旧版权重未给出独立模型/数据许可，故只在本机完整包可用。自动 ASR 强制对齐、非中文回退和无 LRC 长歌曲仍未就绪。
 
 ## 发布门槛
 

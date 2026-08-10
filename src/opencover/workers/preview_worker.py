@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from opencover.adapters.backends import DDSPAdapter, RVCAdapter
+from opencover.core.retry_policy import convert_with_oom_retry, is_cuda_oom
 from opencover.models.registry import ModelRegistry
 
 
@@ -43,11 +44,15 @@ def main(request_file: str) -> int:
         if model.engine == "rvc":
             adapter = RVCAdapter(root / "external_backends" / "rvc")
             index = model_dir / model.index_files[0] if model.index_files else None
-            adapter.convert(source, partial, weight, model.recommended_pitch, index)
+            converter = lambda chunk, target: adapter.convert(chunk, target, weight, model.recommended_pitch, index)
         else:
             adapter = DDSPAdapter(root / "external_backends" / "ddsp")
             config = model_dir / model.config_files[0] if model.config_files else None
-            adapter.convert(source, partial, weight, model.recommended_pitch, config)
+            converter = lambda chunk, target: adapter.convert(chunk, target, weight, model.recommended_pitch, config)
+        convert_with_oom_retry(
+            source, partial, converter,
+            lambda message: (emit("status", message=message), emit("progress", stage="convert", value=55)),
+        )
         emit("progress", stage="validate", value=90)
         if not partial.is_file() or partial.stat().st_size < 1024:
             raise RuntimeError("试听推理未生成有效 WAV")
@@ -67,7 +72,7 @@ def main(request_file: str) -> int:
     except Exception as exc:
         if partial is not None:
             partial.unlink(missing_ok=True)
-        emit("error", code="PREVIEW_WORKER_ERROR", message=str(exc))
+        emit("error", code="CUDA_OOM" if is_cuda_oom(exc) else "PREVIEW_WORKER_ERROR", message=str(exc))
         return 1
 
 

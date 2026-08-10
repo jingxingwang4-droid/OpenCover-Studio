@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from opencover.models.registry import ModelRegistry
+from opencover.core.retry_policy import is_cuda_oom
 from opencover.pipelines.lyric_cover import LyricCoverPipeline, LyricCoverRequest
 
 
@@ -26,6 +27,7 @@ def main(request_file: str) -> int:
             original_lyrics=str(options.get("original_lyrics", "")), new_lyrics=str(options.get("new_lyrics", "")),
             strategy=str(options.get("strategy", "均衡")), pitch=int(options.get("pitch", 0)),
             balance=str(options.get("balance", "均衡")), output_format=str(options.get("output_format", "wav")),
+            generator=str(options.get("generator", "auto")),
         )
         emit("status", message="正在检查改词组件")
         pipeline = LyricCoverPipeline(root)
@@ -42,7 +44,7 @@ def main(request_file: str) -> int:
         emit("result", path=str(output))
         return 0
     except Exception as exc:
-        emit("error", code="LYRIC_WORKER_ERROR", message=str(exc))
+        emit("error", code="CUDA_OOM" if is_cuda_oom(exc) else "LYRIC_WORKER_ERROR", message=str(exc))
         return 1
 
 

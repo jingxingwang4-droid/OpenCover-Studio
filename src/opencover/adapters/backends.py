@@ -106,6 +106,78 @@ class Vevo2Adapter:
         run_checked([str(_runtime_python(self.root)), str(runner), str(request_file)], self.root, timeout=7200)
 
 
+class GameAdapter:
+    backend_id = "game"
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def _python(self) -> Path:
+        return self.root.parent / "ddsp" / "runtime" / "Scripts" / "python.exe"
+
+    def _model(self) -> Path:
+        return self.root / "models" / "GAME-1.0-small" / "GAME-1.0-small" / "model.pt"
+
+    def status(self) -> BackendStatus:
+        metadata = _marker(self.root)
+        source = self.root / "GAME" / "infer.py"
+        installed = self._python().is_file() and source.is_file() and self._model().is_file()
+        runnable = installed and metadata.get("smoke_test_passed") is True
+        detail = "GAME small 已通过真实 MIDI/文本提取" if runnable else (
+            "文件存在但尚未通过真实提取" if installed else "缺少 GAME 源码、模型或兼容 runtime"
+        )
+        return BackendStatus("game", "GAME", installed, runnable, str(metadata.get("commit", "未验证")), detail)
+
+    def extract_notes(self, input_dir: Path, output_dir: Path) -> Path:
+        status = self.status()
+        if not status.runnable:
+            raise BackendUnavailable(status.detail)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        args = [
+            str(self._python()), "-X", "utf8", "infer.py", "extract", str(input_dir), "-m", str(self._model()),
+            "--language", "zh", "--batch-size", "1", "--num-workers", "0", "--precision", "32-true",
+            "--glob", "source_*.wav", "--output-formats", "txt", "--pitch-format", "name",
+            "--round-pitch", "--output-dir", str(output_dir),
+        ]
+        run_checked(args, self.root / "GAME", timeout=7200)
+        if not list(output_dir.rglob("source_*.txt")):
+            raise RuntimeError("GAME 没有生成音符文本")
+        return output_dir
+
+
+class DiffSingerLegacyAdapter:
+    backend_id = "diffsinger"
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def _python(self) -> Path:
+        return self.root.parent / "rvc" / "runtime" / "Scripts" / "python.exe"
+
+    def status(self) -> BackendStatus:
+        metadata = _marker(self.root)
+        demo = self.root / "legacy_demo"
+        required = [
+            demo / "checkpoints" / "0831_opencpop_ds1000" / "model_ckpt_steps_320000.ckpt",
+            demo / "checkpoints" / "0102_xiaoma_pe" / "model_ckpt_steps_60000.ckpt",
+            demo / "checkpoints" / "0109_hifigan_bigpopcs_hop128" / "model_ckpt_steps_1512000.ckpt",
+        ]
+        installed = self._python().is_file() and (self.root / "legacy_runtime" / "Lib" / "site-packages" / "pypinyin").is_dir()
+        runnable = installed and all(path.is_file() for path in required) and metadata.get("legacy_smoke_test_passed") is True
+        detail = "官方 legacy OpenCpop 模型已通过中文真实合成" if runnable else (
+            "legacy 文件存在但真实合成尚未通过" if installed else "缺少 legacy 模型或兼容 runtime"
+        )
+        return BackendStatus("diffsinger", "DiffSinger", installed, runnable, str(metadata.get("legacy_commit", metadata.get("commit", "未验证"))), detail)
+
+    def generate_batch(self, request_file: Path, runner: Path) -> None:
+        status = self.status()
+        if not status.runnable:
+            raise BackendUnavailable(status.detail)
+        if not runner.is_file():
+            raise BackendUnavailable("DiffSinger 兼容运行脚本缺失")
+        run_checked([str(self._python()), "-X", "utf8", str(runner), str(request_file)], self.root, timeout=7200)
+
+
 class RVCAdapter:
     backend_id = "rvc"
 

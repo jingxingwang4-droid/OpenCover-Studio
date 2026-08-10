@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from opencover import __version__
-from opencover.adapters.backends import DDSPAdapter, MSSTAdapter, MarkerBackendAdapter, RVCAdapter, Vevo2Adapter
+from opencover.adapters.backends import DDSPAdapter, DiffSingerLegacyAdapter, GameAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
 from opencover.adapters.base import BackendStatus
 from opencover.config import Settings
 from opencover.core.hardware_detector import HardwareInfo
@@ -159,10 +159,18 @@ class LyricPage(QWidget):
             grid.addWidget(QLabel(label), 1, column * 2); grid.addWidget(widget, 1, column * 2 + 1)
         form.addRow("生成设置", selectors)
         status = Vevo2Adapter(paths.external_backends / "vevo2").status()
-        self.note = QLabel(("Vevo2 已通过真实中文/日文推理；任务会先分离、分句，再生成和转换音色。" if status.runnable else status.detail))
+        fallback = [GameAdapter(paths.external_backends / "game").status(), DiffSingerLegacyAdapter(paths.external_backends / "diffsinger").status()]
+        ready = status.runnable or all(item.runnable for item in fallback)
+        if status.runnable:
+            detail = "Vevo2 已通过真实中文/日文推理；任务会先分离、分句，再生成和转换音色。"
+        elif ready:
+            detail = "Vevo2 未就绪；将自动使用已实测的 GAME + DiffSinger 中文回退链。"
+        else:
+            detail = "Vevo2 与 GAME + DiffSinger 回退链均未就绪，请先到组件管理检查。"
+        self.note = QLabel(detail)
         self.note.setWordWrap(True); self.note.setObjectName("Muted"); form.addRow("当前状态", self.note)
         actions = QWidget(); row = QHBoxLayout(actions); row.setContentsMargins(0, 0, 0, 0)
-        add = QPushButton("导入音色"); self.start = QPushButton("开始改词翻唱"); self.start.setObjectName("Primary"); self.start.setEnabled(status.runnable)
+        add = QPushButton("导入音色"); self.start = QPushButton("开始改词翻唱"); self.start.setObjectName("Primary"); self.start.setEnabled(ready)
         row.addWidget(add); row.addStretch(); row.addWidget(self.start); form.addRow("", actions)
         self.engine.currentTextChanged.connect(self.refresh_models); add.clicked.connect(self.import_requested); self.start.clicked.connect(self._start)
         layout.addWidget(fields); layout.addStretch(); self.refresh_models()
@@ -360,18 +368,22 @@ class VoiceManagerPage(QWidget):
 
 class HistoryPage(QWidget):
     cancel_requested = Signal(str)
+    rerun_requested = Signal(dict)
 
-    def __init__(self, database: Database, paths: AppPaths):
-        super().__init__(); self.database = database; self.paths = paths; page, layout = panel_layout("任务记录", "本地 SQLite 记录；失败与取消不会被隐藏。")
+    def __init__(self, database: Database, paths: AppPaths, registry: ModelRegistry):
+        super().__init__(); self.database = database; self.paths = paths; self.registry = registry; page, layout = panel_layout("任务记录", "本地 SQLite 记录；失败与取消不会被隐藏。")
         QVBoxLayout(self).addWidget(page); self.table = QTableWidget(0, 8); self.table.setHorizontalHeaderLabels(["歌曲", "类型", "引擎", "音色", "状态", "进度", "时间", "输出"])
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers); self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table, 1)
         self.player = AudioPlayer(); layout.addWidget(self.player)
-        actions = QHBoxLayout(); refresh = QPushButton("刷新"); play = QPushButton("播放输出"); open_output = QPushButton("打开目录")
+        actions = QGridLayout(); refresh = QPushButton("刷新"); play = QPushButton("播放输出"); open_output = QPushButton("打开目录")
+        rerun = QPushButton("重新生成"); change_voice = QPushButton("更换音色生成")
         cancel = QPushButton("取消任务"); delete = QPushButton("删除记录"); clear = QPushButton("清缓存"); export = QPushButton("导出任务信息")
         refresh.clicked.connect(self.refresh); play.clicked.connect(self._play); open_output.clicked.connect(self._open_output)
+        rerun.clicked.connect(self._rerun); change_voice.clicked.connect(self._change_voice)
         cancel.clicked.connect(self._cancel); delete.clicked.connect(self._delete); clear.clicked.connect(self._clear_cache); export.clicked.connect(self._export)
-        for button in (refresh, play, open_output, cancel, delete, clear, export): actions.addWidget(button)
+        for index, button in enumerate((refresh, play, open_output, rerun, change_voice, cancel, delete, clear, export)):
+            actions.addWidget(button, index // 5, index % 5)
         layout.addLayout(actions); self.refresh()
 
     def _selected(self) -> dict[str, object] | None:
@@ -399,6 +411,54 @@ class HistoryPage(QWidget):
             QMessageBox.information(self, "无需取消", "请选择正在运行的任务。")
             return
         self.cancel_requested.emit(str(job["id"]))
+
+    def _rerun_payload(self, job: dict[str, object]) -> dict[str, object]:
+        try:
+            options = json.loads(str(job.get("options_json") or "{}"))
+        except json.JSONDecodeError as exc:
+            raise ValueError("任务设置记录已损坏，无法重新生成") from exc
+        if not isinstance(options, dict):
+            raise ValueError("任务设置记录格式无效")
+        return {
+            "_kind": str(job["kind"]), "input_path": str(job["input_path"]),
+            "engine": str(job["engine"]), "model_id": str(job["model_id"]), "options": options,
+        }
+
+    def _rerun(self) -> None:
+        job = self._selected()
+        if not job:
+            QMessageBox.information(self, "请选择任务", "请先选择要重新生成的任务记录。")
+            return
+        if job.get("status") in {"pending", "running"}:
+            QMessageBox.information(self, "任务仍在运行", "请等待任务完成或先取消。")
+            return
+        try:
+            self.rerun_requested.emit(self._rerun_payload(job))
+        except ValueError as exc:
+            QMessageBox.warning(self, "无法重新生成", str(exc))
+
+    def _change_voice(self) -> None:
+        job = self._selected()
+        if not job or job.get("kind") not in {"original", "lyric", "preview"}:
+            QMessageBox.information(self, "无法更换音色", "请选择原词、改词或试听任务。")
+            return
+        models = self.registry.scan(str(job["engine"]))
+        if not models:
+            QMessageBox.warning(self, "没有可用音色", "当前引擎没有已导入且有效的音色。")
+            return
+        labels = [f"{model.display_name}  ·  {model.id}" for model in models]
+        current = next((index for index, model in enumerate(models) if model.id == job.get("model_id")), 0)
+        selected, accepted = QInputDialog.getItem(self, "更换音色生成", "选择新音色：", labels, current, False)
+        if not accepted:
+            return
+        try:
+            payload = self._rerun_payload(job)
+        except ValueError as exc:
+            QMessageBox.warning(self, "无法重新生成", str(exc)); return
+        model = models[labels.index(selected)]
+        payload["model_id"] = model.id
+        payload["engine"] = model.engine
+        self.rerun_requested.emit(payload)
 
     def _delete(self) -> None:
         job = self._selected()
@@ -458,7 +518,11 @@ class ComponentPage(QWidget):
         try:
             data = yaml.safe_load((self.paths.config / "resource_manifest.yaml").read_text(encoding="utf-8"))
             excluded = {"voice_model", "preview_source_audio", "test_audio"}
-            return [item for item in data["resources"] if item.get("download_url") and item.get("type") not in excluded]
+            return [
+                item for item in data["resources"]
+                if item.get("download_url") and item.get("type") not in excluded
+                and item.get("download_method", "http") == "http"
+            ]
         except (OSError, KeyError, TypeError, yaml.YAMLError):
             return []
 
@@ -518,8 +582,8 @@ class ComponentPage(QWidget):
         statuses += [MSSTAdapter(self.paths.external_backends / "msst").status(), RVCAdapter(self.paths.external_backends / "rvc").status(), DDSPAdapter(self.paths.external_backends / "ddsp").status()]
         statuses += [
             Vevo2Adapter(self.paths.external_backends / "vevo2").status(),
-            MarkerBackendAdapter(self.paths.external_backends / "game", "game", "GAME").status(),
-            MarkerBackendAdapter(self.paths.external_backends / "diffsinger", "diffsinger", "DiffSinger").status(),
+            GameAdapter(self.paths.external_backends / "game").status(),
+            DiffSingerLegacyAdapter(self.paths.external_backends / "diffsinger").status(),
             BackendStatus("alignment", "歌词对齐", True, True, "LRC/逐行分段", "LRC 时间戳和逐行保守分段已可用；无时间戳长歌曲会要求补充 LRC"),
         ]
         self.table.setRowCount(len(statuses))
@@ -564,12 +628,12 @@ class MainWindow(QMainWindow):
         )
 
     def _add_pages(self) -> None:
-        home = HomePage(self.hardware, self.paths); cover = CoverPage(self.registry); lyric = LyricPage(self.registry, self.paths); voices = VoiceManagerPage(self.registry); history = HistoryPage(self.database, self.paths)
+        home = HomePage(self.hardware, self.paths); cover = CoverPage(self.registry); lyric = LyricPage(self.registry, self.paths); voices = VoiceManagerPage(self.registry); history = HistoryPage(self.database, self.paths, self.registry)
         home.navigate.connect(self.navigate); home.import_requested.connect(self.import_voice); cover.import_requested.connect(self.import_voice); cover.start_requested.connect(self.start_job); voices.import_requested.connect(self.import_voice)
         lyric.import_requested.connect(self.import_voice); lyric.start_requested.connect(self.start_lyric_job)
         voices.generate_requested.connect(self.start_preview_job); voices.model_selected.connect(self.select_model)
         voices.edit_requested.connect(self.edit_voice)
-        history.cancel_requested.connect(self.jobs.cancel); self.jobs.event.connect(lambda job_id, event: history.refresh())
+        history.cancel_requested.connect(self.jobs.cancel); history.rerun_requested.connect(self.rerun_job); self.jobs.event.connect(lambda job_id, event: history.refresh())
         self.jobs.finished.connect(self._job_finished)
         pages = {"首页": home, "原词翻唱": cover, "改词翻唱 Beta": lyric, "音色管理": voices, "任务记录": history, "组件管理": ComponentPage(self.paths, self.jobs, self.database), "设置": SettingsPage(self.app_settings, self.hardware)}
         for name, page in pages.items(): self.pages[name] = page; self.stack.addWidget(page)
@@ -610,6 +674,23 @@ class MainWindow(QMainWindow):
         if missing: QMessageBox.warning(self, "组件尚未就绪", "无法开始真实推理：\n\n" + "\n".join(f"• {item}" for item in missing) + "\n\n请在“组件管理”查看真实状态。"); return
         payload["root"] = str(self.paths.root); job_id = self.jobs.submit_original(payload); QMessageBox.information(self, "任务已创建", f"任务 {job_id[:8]} 已在独立进程启动。"); self.navigate("任务记录")
 
+    def rerun_job(self, payload: dict) -> None:
+        kind = str(payload.pop("_kind", ""))
+        if kind == "original":
+            self.start_job(payload)
+        elif kind == "lyric":
+            self.start_lyric_job(payload)
+        elif kind == "preview":
+            self.start_preview_job(str(payload["model_id"])); self.navigate("任务记录")
+        elif kind == "resource":
+            options = payload.get("options", {})
+            install = bool(options.get("install", True)) if isinstance(options, dict) else True
+            job_id = self.jobs.submit_resource(str(payload["input_path"]), install=install)
+            QMessageBox.information(self, "资源任务已创建", f"任务 {job_id[:8]} 已重新启动。")
+            self.navigate("任务记录")
+        else:
+            QMessageBox.warning(self, "无法重新生成", f"不支持的历史任务类型：{kind or '未知'}")
+
     def start_preview_job(self, model_id: str) -> None:
         model = self.registry.get(model_id)
         if model is None:
@@ -630,7 +711,11 @@ class MainWindow(QMainWindow):
         model = self.registry.get(str(payload["model_id"])); missing = []
         if model is None:
             missing.append("音色不存在")
-        statuses = [MSSTAdapter(self.paths.external_backends / "msst").status(), Vevo2Adapter(self.paths.external_backends / "vevo2").status()]
+        statuses = [MSSTAdapter(self.paths.external_backends / "msst").status()]
+        vevo = Vevo2Adapter(self.paths.external_backends / "vevo2").status()
+        fallback = [GameAdapter(self.paths.external_backends / "game").status(), DiffSingerLegacyAdapter(self.paths.external_backends / "diffsinger").status()]
+        if not vevo.runnable and not all(item.runnable for item in fallback):
+            missing.append("Vevo2 与 GAME + DiffSinger fallback 均未就绪")
         statuses.append((RVCAdapter(self.paths.external_backends / "rvc") if payload["engine"] == "rvc" else DDSPAdapter(self.paths.external_backends / "ddsp")).status())
         missing.extend(item.detail for item in statuses if not item.runnable)
         if not self.hardware.ffmpeg:

@@ -4,6 +4,7 @@ import hashlib
 import json
 import shutil
 import sys
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -11,8 +12,9 @@ from typing import Callable
 import numpy as np
 import soundfile as sf
 
-from opencover.adapters.backends import DDSPAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
+from opencover.adapters.backends import DDSPAdapter, DiffSingerLegacyAdapter, GameAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
 from opencover.audio.processing import export_audio, ffmpeg_path, mix_tracks, normalize_input, validate_audio
+from opencover.core.retry_policy import convert_with_oom_retry
 from opencover.lyrics.processing import LyricSegment, build_lyric_segments
 from opencover.models.schema import VoiceModel
 from opencover.pipelines.original_cover import CoverRequest, separation_cache_key
@@ -29,10 +31,19 @@ class LyricCoverRequest:
     pitch: int = 0
     balance: str = "均衡"
     output_format: str = "wav"
+    generator: str = "auto"
 
 
 def _digest(parts: list[str]) -> str:
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
+
+
+def backend_markers(root: Path) -> str:
+    parts: list[str] = []
+    for name in ("vevo2", "game", "diffsinger"):
+        marker = root / "external_backends" / name / "backend.json"
+        parts.append(marker.read_text(encoding="utf-8") if marker.is_file() else f"{name}:missing")
+    return "\n".join(parts)
 
 
 def _resample(values: np.ndarray, target_frames: int) -> np.ndarray:
@@ -47,6 +58,36 @@ def _resample(values: np.ndarray, target_frames: int) -> np.ndarray:
     return np.interp(new, old, values).astype(np.float32)
 
 
+def game_melody_for_text(text: str, duration: float, notes_file: Path) -> tuple[str, str, str]:
+    """Map GAME's pitch contour to one DiffSinger note window per Chinese character."""
+    clean = "".join(character for character in text if "\u4e00" <= character <= "\u9fff")
+    if not clean:
+        raise RuntimeError("DiffSinger fallback 当前只支持包含中文汉字的新歌词分段")
+    events: list[tuple[float, float, str]] = []
+    for line in notes_file.read_text(encoding="utf-8").splitlines():
+        fields = line.strip().split("\t")
+        if len(fields) != 3:
+            continue
+        match = re.match(r"^([A-G](?:#|b)?-?\d+)", fields[2])
+        if not match:
+            continue
+        try:
+            events.append((float(fields[0]), float(fields[1]), match.group(1)))
+        except ValueError:
+            continue
+    if not events:
+        raise RuntimeError(f"GAME 没有从 {notes_file.name} 提取到有效音符")
+    window = max(0.05, duration / len(clean))
+    pitches: list[str] = []
+    for index in range(len(clean)):
+        midpoint = (index + 0.5) * duration / len(clean)
+        overlapping = [event for event in events if event[0] <= midpoint <= event[1]]
+        chosen = min(overlapping or events, key=lambda event: abs((event[0] + event[1]) / 2 - midpoint))
+        pitches.append(chosen[2])
+    durations = [f"{window:.6f}" for _ in clean]
+    return clean, " | ".join(pitches), " | ".join(durations)
+
+
 class LyricCoverPipeline:
     """Experimental but real LRC/line-segmented Vevo2 → VC → mix pipeline."""
 
@@ -54,19 +95,33 @@ class LyricCoverPipeline:
         self.root = root
         self.msst = MSSTAdapter(root / "external_backends" / "msst")
         self.vevo2 = Vevo2Adapter(root / "external_backends" / "vevo2")
+        self.game = GameAdapter(root / "external_backends" / "game")
+        self.diffsinger = DiffSingerLegacyAdapter(root / "external_backends" / "diffsinger")
         self.rvc = RVCAdapter(root / "external_backends" / "rvc")
         self.ddsp = DDSPAdapter(root / "external_backends" / "ddsp")
 
     def preflight(self, request: LyricCoverRequest) -> list[str]:
         issues: list[str] = []
+        if request.generator not in {"auto", "vevo2", "diffsinger"}:
+            issues.append(f"未知改词生成器：{request.generator}")
         if not request.input_path.is_file():
             issues.append("输入音频不存在")
         if not ffmpeg_path(self.root):
             issues.append("FFmpeg 未安装")
-        for adapter in (self.msst, self.vevo2):
-            status = adapter.status()
-            if not status.runnable:
-                issues.append(status.detail)
+        status = self.msst.status()
+        if not status.runnable:
+            issues.append(status.detail)
+        vevo_status = self.vevo2.status()
+        fallback_statuses = (self.game.status(), self.diffsinger.status())
+        fallback_ready = all(item.runnable for item in fallback_statuses)
+        if request.generator == "vevo2" and not vevo_status.runnable:
+            issues.append(vevo_status.detail)
+        elif request.generator == "diffsinger" and not fallback_ready:
+            issues.append("GAME + DiffSinger fallback 未同时就绪：" + "；".join(item.detail for item in fallback_statuses))
+        elif request.generator == "auto" and not vevo_status.runnable and not fallback_ready:
+            issues.append("Vevo2 不可用，且 GAME + DiffSinger fallback 未同时就绪：" + "；".join(
+                [vevo_status.detail, *(item.detail for item in fallback_statuses)]
+            ))
         converter = self.rvc if request.engine == "rvc" else self.ddsp
         status = converter.status()
         if not status.runnable:
@@ -131,6 +186,35 @@ class LyricCoverPipeline:
         ]
         return next((path for path in candidates if path.is_file()), candidates[0])
 
+    def _diffsinger_runner(self) -> Path:
+        candidates = [
+            self.root / "src" / "opencover" / "workers" / "diffsinger_legacy_runtime.py",
+            self.root / "_internal" / "workers" / "diffsinger_legacy_runtime.py",
+            Path(getattr(sys, "_MEIPASS", "")) / "workers" / "diffsinger_legacy_runtime.py",
+        ]
+        return next((path for path in candidates if path.is_file()), candidates[0])
+
+    def _generate_diffsinger(
+        self, manifest: list[dict[str, object]], segments: list[LyricSegment], segment_dir: Path,
+        report: Callable[[str, int, str], None],
+    ) -> None:
+        notes_dir = segment_dir / "game_notes"
+        report("generate", 44, "正在用 GAME 提取旋律")
+        self.game.extract_notes(segment_dir, notes_dir)
+        ds_segments: list[dict[str, object]] = []
+        for index, (item, segment) in enumerate(zip(manifest, segments)):
+            note_file = notes_dir / f"source_{index:03d}.txt"
+            if not note_file.is_file():
+                raise RuntimeError(f"GAME 缺少分段音符：{note_file.name}")
+            text, notes, durations = game_melody_for_text(segment.new_text, segment.duration, note_file)
+            ds_segments.append({"text": text, "notes": notes, "notes_duration": durations, "output": item["output"]})
+        request_file = segment_dir / "diffsinger_request.json"
+        request_file.write_text(json.dumps({
+            "root": str(self.root), "experiment": "0831_opencpop_ds1000", "segments": ds_segments,
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        report("generate", 48, f"DiffSinger 正在一次加载模型并生成 {len(ds_segments)} 个短句")
+        self.diffsinger.generate_batch(request_file, self._diffsinger_runner())
+
     def _extract_segments(self, vocals: Path, segments: list[LyricSegment], target: Path) -> list[dict[str, object]]:
         audio, rate = sf.read(vocals, always_2d=True, dtype="float32")
         mono = audio.mean(axis=1)
@@ -190,10 +274,10 @@ class LyricCoverPipeline:
         segments = build_lyric_segments(request.original_lyrics, request.new_lyrics, duration, request.strategy)
 
         source_stat = request.input_path.stat()
-        marker = (self.root / "external_backends" / "vevo2" / "backend.json").read_text(encoding="utf-8")
+        marker = backend_markers(self.root)
         generation_key = _digest([
             str(request.input_path.resolve()), str(source_stat.st_size), str(source_stat.st_mtime_ns),
-            request.original_lyrics, request.new_lyrics, request.strategy, marker,
+            request.original_lyrics, request.new_lyrics, request.strategy, request.generator, marker,
         ])
         generation_cache = self.root / "workspace" / "cache" / "lyric_generation" / generation_key
         generated_vocal = generation_cache / "edited_vocal.wav"
@@ -207,11 +291,31 @@ class LyricCoverPipeline:
             request_file.write_text(json.dumps({
                 "root": str(self.root), "seed": 1234, "flow_matching_steps": 32, "segments": manifest,
             }, ensure_ascii=False, indent=2), encoding="utf-8")
-            report("generate", 40, f"Vevo2 正在一次加载模型并生成 {len(segments)} 个短句")
-            self.vevo2.generate_batch(request_file, self._runner())
+            vevo_error: Exception | None = None
+            use_vevo = request.generator in {"auto", "vevo2"} and self.vevo2.status().runnable
+            if use_vevo:
+                report("generate", 40, f"Vevo2 正在一次加载模型并生成 {len(segments)} 个短句")
+                try:
+                    self.vevo2.generate_batch(request_file, self._runner())
+                except Exception as exc:
+                    vevo_error = exc
+            fallback_ready = self.game.status().runnable and self.diffsinger.status().runnable
+            use_fallback = request.generator == "diffsinger" or (
+                request.generator == "auto" and (vevo_error is not None or not self.vevo2.status().runnable)
+            )
+            if use_fallback:
+                if not fallback_ready:
+                    raise RuntimeError(f"Vevo2 失败且 DiffSinger fallback 未就绪：{vevo_error or self.vevo2.status().detail}")
+                if request.generator == "auto":
+                    report("generate", 42, f"Vevo2 失败，自动切换 GAME + DiffSinger：{vevo_error or self.vevo2.status().detail}")
+                else:
+                    report("generate", 42, "已按任务参数选择 GAME + DiffSinger")
+                self._generate_diffsinger(manifest, segments, segment_dir, report)
+            elif vevo_error is not None:
+                raise RuntimeError(f"Vevo2 生成失败：{vevo_error}") from vevo_error
             missing = [item["output"] for item in manifest if not Path(str(item["output"])).is_file()]
             if missing:
-                raise RuntimeError(f"Vevo2 缺少 {len(missing)} 个分段输出")
+                raise RuntimeError(f"改词生成器缺少 {len(missing)} 个分段输出")
             stitched = job_dir / "lyric_generation" / "edited_vocal.wav"
             self._stitch(manifest, segments, duration, stitched)
             generation_cache.mkdir(parents=True, exist_ok=True)
@@ -243,10 +347,11 @@ class LyricCoverPipeline:
             report("convert", 74, f"正在使用 {request.engine.upper()} 转换最终音色")
             if request.engine == "rvc":
                 index = model_dir / request.voice.index_files[0] if request.voice.index_files else None
-                self.rvc.convert(generated_vocal, converted_raw, model, request.pitch, index)
+                converter = lambda source, target: self.rvc.convert(source, target, model, request.pitch, index)
             else:
                 config = model_dir / request.voice.config_files[0] if request.voice.config_files else None
-                self.ddsp.convert(generated_vocal, converted_raw, model, request.pitch, config)
+                converter = lambda source, target: self.ddsp.convert(source, target, model, request.pitch, config)
+            convert_with_oom_retry(generated_vocal, converted_raw, converter, lambda message: report("convert", 76, message))
             conversion_cache.parent.mkdir(parents=True, exist_ok=True)
             partial = conversion_cache.with_suffix(".wav.part")
             shutil.copy2(converted_raw, partial); partial.replace(conversion_cache)

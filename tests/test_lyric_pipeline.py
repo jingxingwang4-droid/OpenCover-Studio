@@ -8,7 +8,8 @@ import soundfile as sf
 
 from opencover.adapters.backends import Vevo2Adapter
 from opencover.lyrics.processing import LyricSegment
-from opencover.pipelines.lyric_cover import LyricCoverPipeline
+from opencover.models.schema import VoiceModel
+from opencover.pipelines.lyric_cover import LyricCoverPipeline, LyricCoverRequest, backend_markers, game_melody_for_text
 
 
 def test_vevo2_status_requires_runtime_source_models_and_smoke_marker(tmp_path: Path) -> None:
@@ -47,3 +48,26 @@ def test_stitch_places_real_generated_segments_at_timestamps(tmp_path: Path) -> 
     assert np.max(np.abs(audio[:40000])) == 0
     assert np.max(np.abs(audio[45000:85000])) > 0.1
     assert np.max(np.abs(audio[90000:])) == 0
+
+
+def test_game_notes_are_mapped_to_chinese_diffsinger_windows(tmp_path: Path) -> None:
+    notes = tmp_path / "source_000.txt"
+    notes.write_text("0.0\t0.4\tC4+12\n0.5\t1.0\tD#4-5\n1.0\t2.0\tG4+0\n", encoding="utf-8")
+    text, pitches, durations = game_melody_for_text("春日，花开！", 2.0, notes)
+    assert text == "春日花开"
+    assert pitches.split(" | ") == ["C4", "D#4", "G4", "G4"]
+    assert durations.split(" | ") == ["0.500000"] * 4
+
+
+def test_lyric_preflight_rejects_unknown_generator(tmp_path: Path) -> None:
+    source = tmp_path / "input.wav"
+    source.write_bytes(b"audio")
+    voice = VoiceModel(id="voice", display_name="Voice", engine="rvc", model_files=["model.pth"])
+    request = LyricCoverRequest(source, "rvc", voice, "原词", "新词", generator="unknown")
+    assert "未知改词生成器：unknown" in LyricCoverPipeline(tmp_path).preflight(request)
+
+
+def test_generation_marker_tolerates_missing_optional_backend_markers(tmp_path: Path) -> None:
+    for name in ("vevo2", "game", "diffsinger"):
+        (tmp_path / "external_backends" / name).mkdir(parents=True)
+    assert backend_markers(tmp_path) == "vevo2:missing\ngame:missing\ndiffsinger:missing"

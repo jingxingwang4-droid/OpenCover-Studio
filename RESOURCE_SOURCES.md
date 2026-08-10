@@ -19,6 +19,9 @@
 - GAME：https://github.com/openvpi/GAME
 - GAME v1.0 模型：https://github.com/openvpi/GAME/releases/tag/v1.0.0
 - DiffSinger：https://github.com/openvpi/DiffSinger
+- 原版 DiffSinger 官方仓库（MIT）：https://github.com/MoonInTheRiver/DiffSinger
+- 原版官方预训练模型 release：https://github.com/MoonInTheRiver/DiffSinger/releases/tag/pretrain-model
+- 原版官方 README 链接的 Hugging Face demo/权重：https://huggingface.co/spaces/Silentlin/DiffSinger
 - 公共领域分离测试音频：https://commons.wikimedia.org/wiki/File:Irene_Dunne_singing_in_Love_Affair.ogg
 
 祥子双模型的模型卡均声明其为非官方社区模型，且没有给出角色权利、训练数据授权或再分发许可；因此只在本机按用户要求下载并测试，绝不进入 Git 或公开发行包。未填写的下载地址、哈希、作者或许可表示尚未核验，而不是“任意镜像均可”。

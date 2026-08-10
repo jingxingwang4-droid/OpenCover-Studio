@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from opencover.models.registry import ModelRegistry
+from opencover.core.retry_policy import is_cuda_oom
 from opencover.pipelines.original_cover import CoverRequest, OriginalCoverPipeline
 
 
@@ -42,7 +43,7 @@ def main(request_file: str) -> int:
         emit("result", path=str(output))
         return 0
     except Exception as exc:
-        emit("error", code="WORKER_ERROR", message=str(exc))
+        emit("error", code="CUDA_OOM" if is_cuda_oom(exc) else "WORKER_ERROR", message=str(exc))
         return 1
 
 

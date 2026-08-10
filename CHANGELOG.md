@@ -24,3 +24,7 @@
 - 新增真实 CUDA/FP16、Compute Capability、RAM/磁盘检测；pytest 增至 24 项。
 - 组装并验证 22.76 GiB `Modern-LocalFull` 私有包；公开包继续排除不可再分发权重。
 - 组件管理页接入可取消的资源 worker：断点、重试、速度/进度、缓存、大小/SHA256、安全解压和拒绝覆盖；下载完成后仍以真实后端 smoke test 判定可用状态。
+- 固定原版官方 DiffSinger demo 与 OpenCpop/NSF-HiFiGAN 权重，接通 GAME 旋律提取、中文字符映射、批量 DiffSinger 合成及 Vevo2 失败自动回退；固定样例、动态旋律与完整祥子 RVC 混音均生成真实非静音 WAV。
+- 历史任务新增“重新生成”和“更换音色生成”，音频播放器新增音量滑块；改词页在仅 GAME + DiffSinger 就绪时也可启动。
+- RVC/DDSP 与试听转换新增 CUDA OOM 分类、失败子进程退出、30/15 秒分段有限重试和 `CUDA_OOM` 错误码；单元测试验证交叉淡化拼接，实体低显存硬件仍保守标为未验收。
+- pytest 增至 33 项，新增改词生成器、缺失可选 marker、GAME 音符映射、历史操作、音量控制和 OOM 降级覆盖。

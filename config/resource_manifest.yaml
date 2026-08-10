@@ -339,7 +339,88 @@ resources:
     backend: diffsinger
     last_verified: "2026-08-09"
     status: source_downloaded_model_missing
-    notes: 官方当前分支源码已固定；仓库不附歌声模型。现有 PC-NSF-HiFiGAN 可作 vocoder，但尚未找到格式匹配且许可清楚的当前 acoustic/variance 歌声模型，故不启用合成。
+    notes: 官方当前分支源码已固定且仍不附歌声模型；项目另以论文作者旧版官方演示作为隔离的 legacy fallback，不把两种格式混装。
+
+  - resource_id: diffsinger_legacy_demo_source
+    type: optional_backend_source
+    name: DiffSinger official legacy Hugging Face demo
+    author: MoonInTheRiver / Silentlin
+    official_repository: https://github.com/MoonInTheRiver/DiffSinger
+    source_page: https://huggingface.co/spaces/Silentlin/DiffSinger/tree/6a08cddc365c614a1f50efd5fea1333ac58b5359
+    download_url: https://huggingface.co/spaces/Silentlin/DiffSinger
+    download_method: git_lfs
+    version: official linked OpenCpop interactive demo
+    tag: ""
+    commit: 6a08cddc365c614a1f50efd5fea1333ac58b5359
+    file_size: 418001824
+    sha256: ""
+    license: MIT (code); model and OpenCpop-derived data rights are separate/unspecified
+    redistribution_allowed: false
+    install_directory: external_backends/diffsinger/legacy_demo
+    backend: diffsinger
+    last_verified: "2026-08-10"
+    status: installed_inference_smoke_tested_local_only
+    notes: 论文作者仓库 README 直接链接的官方演示 Space；通过 Git LFS 固定提交拉取。仓库共 180 files / 418001824 bytes。仅本机测试，不进入公开包。
+
+  - resource_id: diffsinger_legacy_opencpop_acoustic
+    type: model
+    name: DiffSinger 0831 OpenCpop DS1000 acoustic model
+    author: MoonInTheRiver / Silentlin
+    official_repository: https://github.com/MoonInTheRiver/DiffSinger
+    source_page: https://huggingface.co/spaces/Silentlin/DiffSinger/tree/6a08cddc365c614a1f50efd5fea1333ac58b5359/checkpoints/0831_opencpop_ds1000
+    download_url: https://huggingface.co/spaces/Silentlin/DiffSinger/resolve/6a08cddc365c614a1f50efd5fea1333ac58b5359/checkpoints/0831_opencpop_ds1000/model_ckpt_steps_320000.ckpt
+    version: 0831 / 320000 steps
+    tag: ""
+    commit: 6a08cddc365c614a1f50efd5fea1333ac58b5359
+    file_size: 170269591
+    sha256: 954a31208ee6afb6240d09454bb204c4fbc63cf70e2586bed0ab29b1dc964c9e
+    license: Unspecified model terms; trained on OpenCpop; local testing only
+    redistribution_allowed: false
+    install_directory: external_backends/diffsinger/legacy_demo/checkpoints/0831_opencpop_ds1000/model_ckpt_steps_320000.ckpt
+    backend: diffsinger
+    last_verified: "2026-08-10"
+    status: installed_weights_only_and_inference_tested_local_only
+    notes: Hugging Face LFS size matched; legacy torch checkpoint weights_only=True succeeded with only state_dict. Fixed Chinese and GAME-derived melody inference both passed.
+
+  - resource_id: diffsinger_legacy_pitch_extractor
+    type: model
+    name: DiffSinger Xiaoma pitch extractor
+    author: MoonInTheRiver / Silentlin
+    official_repository: https://github.com/MoonInTheRiver/DiffSinger
+    source_page: https://huggingface.co/spaces/Silentlin/DiffSinger/tree/6a08cddc365c614a1f50efd5fea1333ac58b5359/checkpoints/0102_xiaoma_pe
+    download_url: https://huggingface.co/spaces/Silentlin/DiffSinger/resolve/6a08cddc365c614a1f50efd5fea1333ac58b5359/checkpoints/0102_xiaoma_pe/model_ckpt_steps_60000.ckpt
+    version: 0102 / 60000 steps
+    tag: ""
+    commit: 6a08cddc365c614a1f50efd5fea1333ac58b5359
+    file_size: 13047222
+    sha256: 53942abd8cb908b6d161e1ad7ff3d7d0dd6b204d5bf050613c9d00c56b185ceb
+    license: Unspecified model/data terms; local testing only
+    redistribution_allowed: false
+    install_directory: external_backends/diffsinger/legacy_demo/checkpoints/0102_xiaoma_pe/model_ckpt_steps_60000.ckpt
+    backend: diffsinger
+    last_verified: "2026-08-10"
+    status: installed_weights_only_and_inference_tested_local_only
+    notes: Hugging Face LFS size matched; weights_only=True succeeded with only state_dict; loaded in real synthesis.
+
+  - resource_id: diffsinger_legacy_nsf_hifigan
+    type: model
+    name: DiffSinger legacy NSF-HiFiGAN singing vocoder
+    author: MoonInTheRiver / Silentlin
+    official_repository: https://github.com/MoonInTheRiver/DiffSinger
+    source_page: https://huggingface.co/spaces/Silentlin/DiffSinger/tree/6a08cddc365c614a1f50efd5fea1333ac58b5359/checkpoints/0109_hifigan_bigpopcs_hop128
+    download_url: https://huggingface.co/spaces/Silentlin/DiffSinger/resolve/6a08cddc365c614a1f50efd5fea1333ac58b5359/checkpoints/0109_hifigan_bigpopcs_hop128/model_ckpt_steps_1512000.ckpt
+    version: 0109 / 1512000 steps
+    tag: ""
+    commit: 6a08cddc365c614a1f50efd5fea1333ac58b5359
+    file_size: 55827436
+    sha256: 1cb68f3ce0c46ba0a8b6d49718f1fffdf5bd7bcab769a986fd2fd129835cc1d1
+    license: Unspecified model/data terms; trained on singing datasets; local testing only
+    redistribution_allowed: false
+    install_directory: external_backends/diffsinger/legacy_demo/checkpoints/0109_hifigan_bigpopcs_hop128/model_ckpt_steps_1512000.ckpt
+    backend: diffsinger
+    last_verified: "2026-08-10"
+    status: installed_weights_only_and_inference_tested_local_only
+    notes: Hugging Face LFS size matched; weights_only=True succeeded with only state_dict; loaded in real synthesis. Upstream docs state the universal vocoder used about 70 hours of singing data, so no redistribution is inferred.
 
   - resource_id: toyokawa_sakiko_rvc
     type: voice_model

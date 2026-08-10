@@ -17,5 +17,6 @@ Git 源码提交包含原创 MIT 代码、用户提供的四张图片与资源�
 - RMSnow/Vevo2 权重：CC BY-NC-ND 4.0；已本机实测，不再分发。
 - OpenVPI GAME：代码 MIT；v1.0 模型 CC BY-NC-SA 4.0，不进入公开发行包。
 - OpenVPI DiffSinger：Apache-2.0；歌声模型、vocoder、词典和 G2P 不自动继承代码许可。
+- MoonInTheRiver 原版 DiffSinger/demo 代码：MIT。`Silentlin/DiffSinger` demo 中的 OpenCpop acoustic、pitch extractor 与 NSF-HiFiGAN 权重没有随文件提供独立模型/训练数据许可；只作本机兼容性验证，不进入公开发行包。
 
 只有完成真实推理且后端 marker 为 `smoke_test_passed` 的组件才应在 GUI 中宣称可用；“已下载”不等于“可推理”。

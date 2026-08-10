@@ -7,7 +7,7 @@
 - MSST/RVC 为 PyTorch 2.9.1+cu130；DDSP 为独立 Python 3.11.5、PyTorch/torchaudio 2.9.1+cu130；三者 CUDA tensor smoke test 均通过。
 - FFmpeg 9.0 essentials build。
 - 应用启动时调用后端 PyTorch 真实执行 CUDA FP16 tensor 运算：`cuda_smoke=True`、`fp16_supported=True`；Windows `GlobalMemoryStatusEx` 检出 31.4 GB RAM，本轮最终磁盘可用空间为 824.3 GB。
-- `.venv\Scripts\python.exe -m pytest -q`：`27 passed`。新增覆盖歌词编码/LRC/密度限制、Vevo2 完整状态、短句拼接、模型哈希缓存、DDSP `config.yaml` 导入规则、后端 UTF-8/GBK 错误透传、音色元数据编辑和删除，以及资源安装越界/覆盖/ZIP 符号链接防护。
+- `.venv\Scripts\python.exe -m pytest -q`：`33 passed`。覆盖歌词编码/LRC/密度限制、Vevo2 与 DiffSinger 生成器选择、缺失可选 marker、GAME 音符映射、短句拼接、模型哈希缓存、DDSP `config.yaml` 导入规则、后端 UTF-8/GBK 错误透传、音色元数据编辑/删除、历史任务操作、播放器音量、CUDA OOM 分类/有限分段重试，以及资源安装越界/覆盖/ZIP 符号链接防护。
 
 ## MSST
 
@@ -47,7 +47,7 @@
 - 导入无试听模型后会提交独立 preview worker；音色卡已有试听时使用 Qt Multimedia 播放，无试听时显示并启用“生成试听”。
 - 已修复 `MainWindow` 向 `JobManager` 传入 `AppPaths` 而非根 `Path` 导致按钮任务崩溃的问题。
 - Modern/Legacy 都按 PyInstaller `--windowed --onedir` 构建；公开包不包含用户测试歌和未获再分发授权的后端/角色权重。
-- 最终重建后两目录均为 641.7 MiB/465 文件；CC0 `neutral_melody.wav` 存在，`assets/audio/春日影.wav` 不存在，weights/backend 文件计数均为 0。Modern、Legacy 与本机完整包三个 EXE 分别启动 8 秒仍存活。
+- 最终重建后两目录均为 641.8 MiB/466 文件；CC0 `neutral_melody.wav` 存在，`assets/audio/春日影.wav` 不存在，weights/backend 文件计数均为 0，DiffSinger 调用包装器存在但不含模型。Modern、Legacy 与本机完整包三个 EXE 均执行启动存活检查。
 - 两个公开包的 `OpenCoverStudioWorker.exe` 无参数协议 smoke 均返回退出码 2、合法 UTF-8 JSON `BAD_ARGUMENTS`，stderr 为 0 bytes，证明冻结 worker 可启动且不会静默挂起。
 - 以系统 `python.exe app.py` 模拟双击：launcher 正常退出并产生 1 个新的项目 `pythonw.exe` GUI 进程，随后只终止该测试进程。
 
@@ -57,15 +57,20 @@
 - 完整 AR 508.93M + Flow 362.87M + tokenizers + vocoder 255.04M 在 RTX 5070 Ti 成功加载；中文、日文各生成 9.16 秒/24 kHz/单声道 PCM16 WAV。中文 SHA256 `46baf4ea...c896`，日文 `f5b1bb0c...fb17`；RMS -25 dB，峰值约 -10.8/-10.6 dB；峰值 CUDA 7,910,244,864 bytes，总耗时 25.78 秒。
 - GAME：源码 commit `4ad815c90dfe2442730f3fdc866fd23e737cbc97`，官方 v1.0 small ZIP SHA256 `3d3e1ac0...c576`。对《春日影》30 秒分离人声用日语条件、CUDA 16-bit AMP 提取成功；MIDI SHA256 `c6dfeffb...8d3e`，TXT `733bc418...0043`，CSV `495cc9b7...798f`。
 - GAME 首次在结果全部保存后因 Rich 向 GBK 终端输出 `•` 而 teardown 失败；设置 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 后相同推理退出码 0。
+- 原版官方 DiffSinger demo 固定 commit `6a08cddc365c614a1f50efd5fea1333ac58b5359`。OpenCpop acoustic 0831 权重 170,269,591 bytes / SHA256 `954a31208ee6afb6240d09454bb204c4fbc63cf70e2586bed0ab29b1dc964c9e`；pitch extractor 13,047,222 bytes / `53942abd8cb908b6d161e1ad7ff3d7d0dd6b204d5bf050613c9d00c56b185ceb`；NSF-HiFiGAN 55,827,436 bytes / `1cb68f3ce0c46ba0a8b6d49718f1fffdf5bd7bcab769a986fd2fd129835cc1d1`。三者都以 `torch.load(weights_only=True)` 加载为仅含 `state_dict` 的旧式 checkpoint；旧序列化格式不支持 unsafe-global 静态枚举，未据此虚称扫描通过。
+- DiffSinger 固定示例输出 5.115 秒、24 kHz、单声道，RMS 0.04590，SHA256 `2a824f40...e765`；GAME 动态音符映射输出 8.672 秒、RMS 0.07277，SHA256 `00950451...a76`。两者均 finite、非静音。
+- 强制选择 `generator=diffsinger` 的完整链执行 MSST 缓存→GAME→DiffSinger→祥子 RVC→混音，输出 9.008 秒、44.1 kHz、双声道，RMS 0.05513、peak 0.98，SHA256 `912147afe1dfcb59d2b1d5408bc0e7b6ffd09d950bb58d9895a9f9e8c7df869b`。
 - 源码 worker 端到端 MSST→Vevo2→祥子 RVC→时长校正→混音成功；9.008 秒双声道输出 SHA256 `8271ac4c...97de3`。
 - 最初复用 windowed GUI EXE 作为 worker 时无 stdout 且卡住，已替换为约 65.30 MB 的 console-subsystem `OpenCoverStudioWorker.exe`；Qt 使用 `CREATE_NO_WINDOW` 隐藏启动。Modern/Legacy 冻结 worker 的资源缓存任务均退出 0、产生 result、stderr 为 0 bytes。
-- `Modern-LocalFull` 为 22.76 GiB。其专用 worker 首次真实全链耗时 114 秒、退出码 0，输出 SHA256 `41f0bb4c...9143`，9.008 秒/44.1 kHz/双声道、RMS 0.05142、finite=True。
+- `Modern-LocalFull` 最终运行后为 23.61 GiB（含运行时生成的 Python 缓存）。其专用 worker 的 Vevo2 真实全链耗时 114 秒、退出码 0，输出 SHA256 `41f0bb4c...9143`，9.008 秒/44.1 kHz/双声道、RMS 0.05142、finite=True。
+- 更新后的冻结 worker 以任务参数明确选择 `generator=diffsinger`，70.6 秒完整执行 GAME→DiffSinger→祥子 RVC→混音，进度 0–100 单调且退出码 0。输出 SHA256 `b0568c9ad5b45d225a2ee0fcce1c26a7657fb574a57c16996094075b03583c70`，9.008 秒/44.1 kHz/双声道、RMS 0.05783、peak 0.98、finite/nonzero 均为 true。
 - Qt JobManager 从该 worker 收到完整 UTF-8 JSON Lines，并将含中文的真实输出路径逐字写入 SQLite。Vevo2 `generate` 阶段在进度 40% 取消后状态为 `cancelled`、无输出，进程树检查 `orphan_count=0`。
 
 ## 未通过/未执行
 
 - 每个引擎 3～5 个可再分发初始音色尚未满足；当前祥子模型只允许本机使用的保守判断。
 - 改词 Vevo2 主路径已接入并真实通过；无时间戳长歌曲仍要求 LRC，尚未集成自动 ASR 强制对齐模型。
-- DiffSinger 当前官方分支不附歌声 acoustic/variance 模型；未找到格式匹配且许可清晰的模型，因此 GAME + DiffSinger 合成 WAV 仍未完成。
+- GAME + DiffSinger 中文回退已真实完成；旧版 OpenCpop demo 权重没有独立模型/数据许可，因此只在本机使用，不能进入公开包。非中文 G2P、音素级歌词对齐仍未实现。
 - Legacy CUDA 11.8 机器未获得实体旧显卡实测；“Legacy”目前只代表发行目标，不宣称兼容性已验收。
+- OOM 故障注入验证了 CUDA 错误分类、后端退出后的 30/15 秒有限分段重试与交叉淡化拼接；当前 12 GB 显卡未发生真实 OOM，因此不宣称已完成实体 4–8 GB 显卡压力测试。MSST 也没有许可/格式匹配的轻量替代 checkpoint 可自动切换。
 - 没有以 mock、输入复制、静音或随机音频代替任何上述未完成结果。

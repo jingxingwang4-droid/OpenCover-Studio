@@ -1,9 +1,9 @@
 param([ValidateSet('Modern','Legacy')][string]$Profile = 'Modern')
 $ErrorActionPreference = 'Stop'
 $name = "OpenCoverStudio-NVIDIA-$Profile"
-.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --windowed --onedir --name $name --paths src --add-data "assets;assets" --add-data "config;config" --add-data "src/opencover/workers/vevo2_runtime.py;workers" app.py
+.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --windowed --onedir --name $name --paths src --add-data "assets;assets" --add-data "config;config" --add-data "src/opencover/workers/vevo2_runtime.py;workers" --add-data "src/opencover/workers/diffsinger_legacy_runtime.py;workers" app.py
 $release = Join-Path 'dist' $name
-.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --console --onefile --name OpenCoverStudioWorker --paths src --add-data "src/opencover/workers/vevo2_runtime.py;workers" worker_entry.py
+.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --console --onefile --name OpenCoverStudioWorker --paths src --add-data "src/opencover/workers/vevo2_runtime.py;workers" --add-data "src/opencover/workers/diffsinger_legacy_runtime.py;workers" worker_entry.py
 Copy-Item -LiteralPath 'dist\OpenCoverStudioWorker.exe' -Destination $release -Force
 # assets/audio contains user-provided local test songs. They are valid inputs
 # for backend QA but must never be copied into a redistributable application.

@@ -1,6 +1,6 @@
 # OpenCover Studio v0.1.0 阶段交付报告
 
-1. GUI：七个简体中文 Qt Widgets 页面、左侧导航、背景蒙层、音频拖放、Qt Multimedia 播放器、托盘、窗口/页面记忆。
+1. GUI：七个简体中文 Qt Widgets 页面、左侧导航、背景蒙层、音频拖放、带音量控制的 Qt Multimedia 播放器、托盘、窗口/页面记忆；历史任务可重新生成或更换同引擎音色后生成。
 2. 启动：双击 `app.py` 自动转交 `pythonw.exe`；Modern/Legacy EXE 均为 windowed onedir，不显示控制台、不打开浏览器。
 3. 后端：MSST `e247dfe...`、RVC `7b284a6...`、DDSP-SVC `2e2ac5d...` 均在各自独立环境通过真实 CUDA 推理。
 4. MSST：官方 MDX23C vocals SDR 10.17 完成公共领域样例和《春日影》全曲分离。
@@ -13,9 +13,10 @@
 11. 缓存：分离、改词生成、音色转换和最终混音分层；换混音/格式不重复模型推理，模型哈希变化会使转换缓存失效。
 12. 模型导入/管理：RVC `.pth/.pt` + 可选 `.index`；DDSP `.pt/.ckpt` + YAML；哈希去重、头像原图/缩略图、试听原件/统一 WAV、名称简介/语言/Key 编辑、试听重生与用户模型删除。
 13. 安全：组件页下载 worker 支持断点、重试、速度/进度、取消、缓存、大小与 SHA256 校验；安全解压拒绝路径穿越、符号链接、压缩炸弹和覆盖；checkpoint 先做 unsafe-global/weights-only 检查；子进程参数列表调用，无 `shell=True`。
-14. 测试：24 项 pytest 全部通过；完整数值与文件哈希见 `docs/TEST_REPORT.md`。
-15. 发行：GUI 为 windowed EXE；独立 worker 用 `CREATE_NO_WINDOW` 隐藏启动并保留 UTF-8 进度。顶层 assets/config 已修复。本机 Modern 完整私有包 22.76 GiB，打包后真实改词与取消均通过。
+14. 测试：33 项 pytest 全部通过；完整数值与文件哈希见 `docs/TEST_REPORT.md`。
+15. 发行：GUI 为 windowed EXE；独立 worker 用 `CREATE_NO_WINDOW` 隐藏启动并保留 UTF-8 进度。Modern/Legacy 公开包均为 641.8 MiB/466 文件且敏感资源泄漏数为 0。本机 Modern 完整私有包 23.61 GiB，打包后 Vevo2 改词、DiffSinger 回退与取消均通过。
 16. Vevo2：官方 4.28 GB 权重已安装；中文/日文独立样例以及 GUI/JobManager 端到端改词均真实成功。支持 LRC/逐行分段、密度策略、时长拼接和缓存；模型 CC BY-NC-ND 4.0，不进入公开包。
-17. GAME：官方 small 模型已对《春日影》30 秒真实提取 MIDI/TXT/CSV。DiffSinger 源码已固定，但当前官方分支不附歌声模型，因此 fallback 合成 WAV 仍不可用。
+17. GAME + DiffSinger：GAME 官方 small 模型已对《春日影》30 秒真实提取 MIDI/TXT/CSV；另固定原版官方 DiffSinger HF demo commit `6a08cdd...`，使用 OpenCpop acoustic、pitch extractor 与 NSF-HiFiGAN 完成固定样例、GAME 动态旋律以及完整 fallback 三层真实 WAV 验证。旧版权重没有独立许可文件，只作本机测试。
 18. 普通音色：除祥子双模型外，RVC 官方仓库示例与一个 DDSP-SVC 6.3 社区模型均生成自己的真实试听；因训练数据/角色衍生权利不清，仍只在本机安装。
-19. 未完成：每引擎 3～5 个可再分发初始音色、自动 ASR 歌词强制对齐、DiffSinger fallback、可移植独立运行时和实体旧显卡 Legacy 验收。界面不会把它们伪装为可用。
+19. OOM：RVC/DDSP/试听捕获明确显存错误后，失败子进程先退出，再以 30 秒和 15 秒分段有限重试；最终失败使用 `CUDA_OOM` 错误码。策略和拼接已用故障注入测试，未冒充实体低显存显卡验证。
+20. 未完成：每引擎 3～5 个可再分发初始音色、自动 ASR 歌词强制对齐、完全可移植的各后端独立运行时和实体旧显卡 Legacy 验收。界面不会把它们伪装为可用。
