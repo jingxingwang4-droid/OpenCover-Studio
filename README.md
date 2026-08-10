@@ -27,7 +27,9 @@ python -m venv .venv
 3. 试听可明确选择“自动生成 / 上传 / 暂不生成”。上传支持 WAV/FLAC/MP3/M4A，经 FFmpeg 限长并统一为 `preview.wav`；自动模式用 CC0 标准干声和目标模型真实推理。
 4. 拖入歌曲，先选 RVC/DDSP，再选对应音色，点击“开始翻唱”。分离、改词生成、音色转换、混音和格式分别缓存；换混音或格式不会重复模型推理。
 5. 改词页优先使用带时间戳 LRC。每句被限制在约 3～15 秒范围，新歌词密度超出所选“保守/均衡/强制”策略时会明确拒绝。
-6. “任务记录”可直接重新生成，或为原词/改词/试听任务更换同引擎音色后再生成；播放器提供独立音量滑块。
+6. “任务记录”可直接重新生成，或为原词/改词/试听任务更换同引擎音色后再生成；播放器提供独立音量滑块。历史表显示音色头像，并可导出包含 `job.json`、`request.json` 与 `worker.log` 的 ZIP 日志包。
+
+每个 worker 的标准输出、标准错误和退出状态都会按 UTC 时间写入任务目录。应用异常退出后，下一次启动会把遗留的 `pending/running` 任务标记为可重新生成的失败记录；运行期间托盘菜单和提示文字显示任务 ID、进度与当前阶段。
 
 RVC/DDSP 转换若捕获到明确的 CUDA OOM，会等待失败的后端子进程退出并释放 CUDA 上下文，再按显存模式使用 8～45 秒分段有限重试；次数有限，仍失败时任务记录显示 `CUDA_OOM`，不会无限循环。“极低/低”模式还会把 Vevo2 flow steps 从标准 32 降到 16/24。Vevo2 主路径失败时自动切换 GAME + DiffSinger。实体低显存显卡上的 OOM/Legacy 兼容性仍需独立验收。
 
@@ -44,7 +46,7 @@ RVC/DDSP 转换若捕获到明确的 CUDA OOM，会等待失败的后端子进�
 
 构建脚本生成 windowed GUI 和独立 `OpenCoverStudioWorker.exe`。Qt 以 `CREATE_NO_WINDOW` 启动 worker，因此没有可见终端，同时保留 UTF-8 JSON Lines 进度、SQLite 状态和进程树取消。公开 Modern/Legacy 阶段包含 GUI、worker、顶层 assets/config、FFmpeg 与 CC0 试听源；受限制权重不进入公开包。
 
-`./scripts/build_local_full.ps1 Modern` 另可在 `release_private/` 组装当前机器专用的 23.61 GiB 完整目录；它包含不可再分发的社区模型、Vevo2、GAME、旧版 DiffSinger 权重和绑定本机解释器路径的虚拟环境，必须遵守 `LOCAL_ONLY_FULL_PACKAGE.txt`，不能公开上传。该私有包的冻结 worker 已完成 Vevo2 主路径与 GAME + DiffSinger 回退路径端到端测试。Legacy 尚无实体旧显卡/CUDA 11.8 验收，不宣称已兼容。
+`./scripts/build_local_full.ps1 Modern` 另可在 `release_private/` 组装当前机器专用的约 23.65 GiB 完整目录；它包含不可再分发的社区模型、Vevo2、GAME、旧版 DiffSinger 权重和绑定本机解释器路径的虚拟环境，必须遵守 `LOCAL_ONLY_FULL_PACKAGE.txt`，不能公开上传。该私有包的冻结 worker 已完成 Vevo2 主路径与 GAME + DiffSinger 回退路径端到端测试。Legacy 尚无实体旧显卡/CUDA 11.8 验收，不宣称已兼容。
 
 ## 安全与版权
 

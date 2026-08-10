@@ -3,12 +3,13 @@ from __future__ import annotations
 import os
 import json
 import shutil
+import zipfile
 from pathlib import Path
 
 import yaml
 
-from PySide6.QtCore import QSettings, Qt, Signal
-from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QPixmap
+from PySide6.QtCore import QSettings, QSize, Qt, Signal
+from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QCheckBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QInputDialog,
@@ -418,12 +419,13 @@ class HistoryPage(QWidget):
     def __init__(self, database: Database, paths: AppPaths, registry: ModelRegistry):
         super().__init__(); self.database = database; self.paths = paths; self.registry = registry; page, layout = panel_layout("任务记录", "本地 SQLite 记录；失败与取消不会被隐藏。")
         QVBoxLayout(self).addWidget(page); self.table = QTableWidget(0, 8); self.table.setHorizontalHeaderLabels(["歌曲", "类型", "引擎", "音色", "状态", "进度", "时间", "输出"])
+        self.table.setIconSize(QSize(28, 28))
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers); self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table, 1)
         self.player = AudioPlayer(); layout.addWidget(self.player)
         actions = QGridLayout(); refresh = QPushButton("刷新"); play = QPushButton("播放输出"); open_output = QPushButton("打开目录")
         rerun = QPushButton("重新生成"); change_voice = QPushButton("更换音色生成")
-        cancel = QPushButton("取消任务"); delete = QPushButton("删除记录"); clear = QPushButton("清缓存"); export = QPushButton("导出任务信息")
+        cancel = QPushButton("取消任务"); delete = QPushButton("删除记录"); clear = QPushButton("清缓存"); export = QPushButton("导出日志包")
         refresh.clicked.connect(self.refresh); play.clicked.connect(self._play); open_output.clicked.connect(self._open_output)
         rerun.clicked.connect(self._rerun); change_voice.clicked.connect(self._change_voice)
         cancel.clicked.connect(self._cancel); delete.clicked.connect(self._delete); clear.clicked.connect(self._clear_cache); export.clicked.connect(self._export)
@@ -528,18 +530,35 @@ class HistoryPage(QWidget):
         job = self._selected()
         if not job:
             return
-        filename, _ = QFileDialog.getSaveFileName(self, "导出任务信息", f"opencover-job-{str(job['id'])[:8]}.json", "JSON (*.json)")
+        filename, _ = QFileDialog.getSaveFileName(self, "导出任务日志包", f"opencover-job-{str(job['id'])[:8]}.zip", "ZIP (*.zip)")
         if filename:
-            Path(filename).write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+            target = Path(filename)
+            if target.suffix.lower() != ".zip":
+                target = target.with_suffix(".zip")
+            self._write_log_bundle(job, target)
+
+    def _write_log_bundle(self, job: dict[str, object], target: Path) -> None:
+        job_dir = self.paths.workspace / "jobs" / str(job["id"])
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("job.json", json.dumps(job, ensure_ascii=False, indent=2))
+            for name in ("request.json", "worker.log"):
+                source = job_dir / name
+                if source.is_file():
+                    archive.write(source, name)
 
     def refresh(self) -> None:
         rows = self.database.list_jobs(); self.table.setRowCount(len(rows))
         for r, job in enumerate(rows):
             kinds = {"original": "原词", "lyric": "改词", "preview": "试听"}
-            values = [Path(str(job["input_path"])).name, kinds.get(str(job["kind"]), job["kind"]), job["engine"], job["model_id"], job["status"], f"{job['progress']}%", str(job["created_at"])[:19].replace("T", " "), job["output_path"] or "—"]
+            model = self.registry.get(str(job["model_id"]))
+            voice_name = model.display_name if model else str(job["model_id"])
+            values = [Path(str(job["input_path"])).name, kinds.get(str(job["kind"]), job["kind"]), job["engine"], voice_name, job["status"], f"{job['progress']}%", str(job["created_at"])[:19].replace("T", " "), job["output_path"] or "—"]
             for c, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 if c == 0: item.setData(Qt.ItemDataRole.UserRole, job["id"])
+                if c == 3 and model and model.avatar:
+                    avatar = model.directory(self.registry.weights_root) / model.avatar
+                    if avatar.is_file(): item.setIcon(QIcon(str(avatar)))
                 self.table.setItem(r, c, item)
 
 
@@ -688,6 +707,7 @@ class MainWindow(QMainWindow):
         voices.generate_requested.connect(self.start_preview_job); voices.model_selected.connect(self.select_model)
         voices.edit_requested.connect(self.edit_voice)
         history.cancel_requested.connect(self.jobs.cancel); history.rerun_requested.connect(self.rerun_job); self.jobs.event.connect(lambda job_id, event: history.refresh())
+        self.jobs.event.connect(self._job_event)
         self.jobs.finished.connect(self._job_finished)
         pages = {"首页": home, "原词翻唱": cover, "改词翻唱 Beta": lyric, "音色管理": voices, "任务记录": history, "组件管理": ComponentPage(self.paths, self.jobs, self.database), "设置": SettingsPage(self.app_settings, self.hardware, self.paths.workspace / "settings.json")}
         for name, page in pages.items(): self.pages[name] = page; self.stack.addWidget(page)
@@ -802,12 +822,26 @@ class MainWindow(QMainWindow):
         job = self.database.get_job(job_id)
         title = "任务完成" if success else "任务未完成"
         detail = Path(str(job.get("output_path"))).name if success and job and job.get("output_path") else str(job.get("error", "请查看任务记录")) if job else "请查看任务记录"
+        self.tray.setToolTip("OpenCover Studio · 当前无任务")
+        self.tray_status_action.setText("当前无任务")
         self.tray.showMessage(title, detail, QSystemTrayIcon.MessageIcon.Information if success else QSystemTrayIcon.MessageIcon.Warning, 5000)
+
+    def _job_event(self, job_id: str, event: object) -> None:
+        job = self.database.get_job(job_id)
+        if not job:
+            return
+        value = int(job.get("progress") or 0)
+        stage = str(job.get("stage") or "运行中")
+        label = f"任务 {job_id[:8]} · {value}% · {stage}"
+        self.tray.setToolTip(f"OpenCover Studio · {label}")
+        self.tray_status_action.setText(label)
 
     def _tray(self) -> None:
         self.tray = QSystemTrayIcon(self); self.tray.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_MediaVolume)); menu = self.tray.contextMenu() or None
         from PySide6.QtWidgets import QMenu
-        menu = QMenu(); show = QAction("打开 OpenCover Studio", self); show.triggered.connect(self.showNormal); output = QAction("打开输出目录", self); output.triggered.connect(lambda: QDesktopServices.openUrl(self.paths.workspace.joinpath("outputs").as_uri())); cancel = QAction("取消全部任务", self); cancel.triggered.connect(lambda: [self.jobs.cancel(job_id) for job_id in list(self.jobs.processes)]); quit_action = QAction("退出", self); quit_action.triggered.connect(QApplication.quit); menu.addActions([show, output, cancel, quit_action]); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.showNormal() if reason == QSystemTrayIcon.ActivationReason.DoubleClick else None); self.tray.show()
+        menu = QMenu(); self.tray_status_action = QAction("当前无任务", self); self.tray_status_action.setEnabled(False); show = QAction("打开 OpenCover Studio", self); show.triggered.connect(self.showNormal); output = QAction("打开输出目录", self); output.triggered.connect(lambda: QDesktopServices.openUrl(self.paths.workspace.joinpath("outputs").as_uri())); cancel = QAction("取消全部任务", self); cancel.triggered.connect(lambda: [self.jobs.cancel(job_id) for job_id in list(self.jobs.processes)]); quit_action = QAction("退出", self); quit_action.triggered.connect(QApplication.quit); menu.addActions([self.tray_status_action, show, output, cancel, quit_action]); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.showNormal() if reason == QSystemTrayIcon.ActivationReason.DoubleClick else None); self.tray.show()
+        if self.jobs.recovered_jobs:
+            self.tray.showMessage("已恢复任务记录", f"检测到 {self.jobs.recovered_jobs} 个上次中断的任务，已标记失败；可在任务记录中重新生成。", QSystemTrayIcon.MessageIcon.Warning, 6000)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.app_settings.window_width = self.width(); self.app_settings.window_height = self.height(); self.app_settings.save(self.paths.workspace / "settings.json")

@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
@@ -26,6 +27,7 @@ class JobManager(QObject):
         super().__init__(parent)
         self.database = database
         self.root = root
+        self.recovered_jobs = database.recover_interrupted_jobs()
         self.processes: dict[str, QProcess] = {}
         self.buffers: dict[str, str] = {}
 
@@ -74,6 +76,10 @@ class JobManager(QObject):
         job_dir.mkdir(parents=True, exist_ok=False)
         request_path = job_dir / "request.json"
         request_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        (job_dir / "worker.log").write_text(
+            f"{datetime.now(timezone.utc).isoformat()} [manager] job={job_id} kind={record['kind']} worker={source_module}\n",
+            encoding="utf-8",
+        )
         process = QProcess(self)
         if os.name == "nt" and hasattr(process, "setCreateProcessArgumentsModifier"):
             def hide_console(arguments):  # type: ignore[no-untyped-def]
@@ -123,6 +129,7 @@ class JobManager(QObject):
     def _read(self, job_id: str) -> None:
         process = self.processes[job_id]
         text = _decode_output(bytes(process.readAllStandardOutput()))
+        self._append_log(job_id, "stdout", text)
         self.buffers[job_id] += text
         while "\n" in self.buffers[job_id]:
             line, self.buffers[job_id] = self.buffers[job_id].split("\n", 1)
@@ -145,6 +152,7 @@ class JobManager(QObject):
     def _read_error(self, job_id: str) -> None:
         error = _decode_output(bytes(self.processes[job_id].readAllStandardError())).strip()
         if error:
+            self._append_log(job_id, "stderr", error + "\n")
             LOG.error("worker %s stderr: %s", job_id, error)
 
     def _done(self, job_id: str, exit_code: int) -> None:
@@ -152,6 +160,21 @@ class JobManager(QObject):
         success = bool(rows and rows[0]["status"] == "completed" and exit_code == 0)
         if rows and rows[0]["status"] == "running":
             self.database.update_job(job_id, status="failed", error=f"工作进程异常退出（{exit_code}）")
+        self._append_log(job_id, "manager", f"process_exit={exit_code} success={success}\n")
         self.finished.emit(job_id, success)
         self.processes.pop(job_id, None)
         self.buffers.pop(job_id, None)
+
+    def _append_log(self, job_id: str, channel: str, content: str) -> None:
+        if not content:
+            return
+        log_path = self.root / "workspace" / "jobs" / job_id / "worker.log"
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now(timezone.utc).isoformat()
+            with log_path.open("a", encoding="utf-8", newline="") as handle:
+                for line in content.splitlines(keepends=True):
+                    suffix = "" if line.endswith(("\n", "\r")) else "\n"
+                    handle.write(f"{timestamp} [{channel}] {line}{suffix}")
+        except OSError:
+            LOG.exception("无法写入 worker 日志：%s", log_path)

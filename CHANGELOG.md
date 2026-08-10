@@ -32,3 +32,5 @@
 - 设置页即时保存显存模式、默认输出和托盘关闭行为；显存档位进入任务与缓存键，并实际调节 Vevo2 steps 和 OOM 分段长度。“低”档 GAME→DiffSinger→祥子 RVC 再次真实通过。
 - 混音响度调整改用显式 dB 增益并在末端统一限峰，避免 pyloudnorm 在最终防削波前向 worker stderr 发出误导性削波警告。
 - 复核 YingMusic-Singer-Plus 与 WhisperX；前者登记为无需精细对齐的未来候选，因 13.05 GB checkpoint、Windows 预构建缺失和 VAE 独立许可暂不安装。
+- 任务系统新增逐任务 `worker.log`、异常退出记录恢复、ZIP 日志包导出、托盘实时进度和历史音色头像；pytest 增至 34 项。
+- 关闭并行 GPU 重载后，用全新歌词完成冻结 Vevo2→丰川祥子 RVC→混音未缓存重试，67.4 秒产生真实非静音 WAV。
