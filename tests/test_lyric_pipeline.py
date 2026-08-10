@@ -68,6 +68,6 @@ def test_lyric_preflight_rejects_unknown_generator(tmp_path: Path) -> None:
 
 
 def test_generation_marker_tolerates_missing_optional_backend_markers(tmp_path: Path) -> None:
-    for name in ("vevo2", "game", "diffsinger"):
+    for name in ("vevo2", "game", "diffsinger", "alignment"):
         (tmp_path / "external_backends" / name).mkdir(parents=True)
-    assert backend_markers(tmp_path) == "vevo2:missing\ngame:missing\ndiffsinger:missing"
+    assert backend_markers(tmp_path) == "vevo2:missing\ngame:missing\ndiffsinger:missing\nalignment:missing"

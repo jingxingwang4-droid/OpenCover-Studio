@@ -7,7 +7,7 @@
 - MSST/RVC 为 PyTorch 2.9.1+cu130；DDSP 为独立 Python 3.11.5、PyTorch/torchaudio 2.9.1+cu130；三者 CUDA tensor smoke test 均通过。
 - FFmpeg 9.0 essentials build。
 - 应用启动时调用后端 PyTorch 真实执行 CUDA FP16 tensor 运算：`cuda_smoke=True`、`fp16_supported=True`；Windows `GlobalMemoryStatusEx` 检出 31.4 GB RAM，本轮最终磁盘可用空间为 824.3 GB。
-- `.venv\Scripts\python.exe -m pytest -q`：`34 passed`。覆盖歌词编码/LRC/密度限制、Vevo2 与 DiffSinger 生成器选择、缺失可选 marker、GAME 音符映射、短句拼接、显存档位缓存/OOM 分段、DDSP `config.yaml` 导入规则、后端 UTF-8/GBK 错误透传、音色元数据编辑/置顶/删除、首页真实记录、输入播放器、设置持久化、异常任务恢复、worker 日志/ZIP 导出、历史操作、播放器音量，以及资源安装越界/覆盖/ZIP 符号链接防护。
+- `.venv\Scripts\python.exe -m pytest -q`：`37 passed`。覆盖歌词编码/LRC/密度限制、自动对齐语言判断/分段校验/adapter、Vevo2 与 DiffSinger 生成器选择、缺失可选 marker、GAME 音符映射、短句拼接、显存档位缓存/OOM 分段、DDSP `config.yaml` 导入规则、后端 UTF-8/GBK 错误透传、音色元数据编辑/置顶/删除、首页真实记录、输入播放器、设置持久化、异常任务恢复、worker 日志/ZIP 导出、历史操作、播放器音量，以及资源安装越界/覆盖/ZIP 符号链接防护。
 
 ## MSST
 
@@ -47,7 +47,7 @@
 - 导入无试听模型后会提交独立 preview worker；音色卡已有试听时使用 Qt Multimedia 播放，无试听时显示并启用“生成试听”。
 - 已修复 `MainWindow` 向 `JobManager` 传入 `AppPaths` 而非根 `Path` 导致按钮任务崩溃的问题。
 - Modern/Legacy 都按 PyInstaller `--windowed --onedir` 构建；公开包不包含用户测试歌和未获再分发授权的后端/角色权重。
-- 最终重建后两目录均为 641.8 MiB/466 文件；CC0 `neutral_melody.wav` 存在，`assets/audio/春日影.wav` 不存在，weights/backend 文件计数均为 0，DiffSinger 调用包装器存在但不含模型。Modern、Legacy 与本机完整包三个 EXE 均执行启动存活检查。
+- 最终 Modern/Legacy 两目录均为 641.8 MiB/467 文件；新增的第 467 个文件是轻量 `alignment_runtime.py` runner。CC0 `neutral_melody.wav` 存在，`assets/audio/春日影.wav` 不存在，敏感 weights/backend 文件计数均为 0。DiffSinger/对齐调用包装器存在但不含模型。Modern、Legacy 与本机完整包三个 EXE 均在隐藏启动 8 秒后保持存活。
 - 两个公开包的 `OpenCoverStudioWorker.exe` 无参数协议 smoke 均返回退出码 2、合法 UTF-8 JSON `BAD_ARGUMENTS`，stderr 为 0 bytes，证明冻结 worker 可启动且不会静默挂起。
 - 以系统 `python.exe app.py` 模拟双击：launcher 正常退出并产生 1 个新的项目 `pythonw.exe` GUI 进程，随后只终止该测试进程。
 
@@ -62,7 +62,7 @@
 - 强制选择 `generator=diffsinger` 的完整链执行 MSST 缓存→GAME→DiffSinger→祥子 RVC→混音，输出 9.008 秒、44.1 kHz、双声道，RMS 0.05513、peak 0.98，SHA256 `912147afe1dfcb59d2b1d5408bc0e7b6ffd09d950bb58d9895a9f9e8c7df869b`。
 - 源码 worker 端到端 MSST→Vevo2→祥子 RVC→时长校正→混音成功；9.008 秒双声道输出 SHA256 `8271ac4c...97de3`。
 - 最初复用 windowed GUI EXE 作为 worker 时无 stdout 且卡住，已替换为约 65.30 MB 的 console-subsystem `OpenCoverStudioWorker.exe`；Qt 使用 `CREATE_NO_WINDOW` 隐藏启动。Modern/Legacy 冻结 worker 的资源缓存任务均退出 0、产生 result、stderr 为 0 bytes。
-- `Modern-LocalFull` 最终运行并同步后为 23.65 GiB（含运行时生成的 Python 缓存、测试输出与日志）。其专用 worker 的 Vevo2 真实全链耗时 114 秒、退出码 0，输出 SHA256 `41f0bb4c...9143`，9.008 秒/44.1 kHz/双声道、RMS 0.05142、finite=True。
+- `Modern-LocalFull` 加入独立歌词对齐环境后为 26.58 GiB（含运行时生成的 Python 缓存、测试输出与日志）。其专用 worker 的 Vevo2 真实全链耗时 114 秒、退出码 0，输出 SHA256 `41f0bb4c...9143`，9.008 秒/44.1 kHz/双声道、RMS 0.05142、finite=True。
 - 更新后的冻结 worker 以任务参数明确选择 `generator=diffsinger`，70.6 秒完整执行 GAME→DiffSinger→祥子 RVC→混音，进度 0–100 单调且退出码 0。输出 SHA256 `b0568c9ad5b45d225a2ee0fcce1c26a7657fb574a57c16996094075b03583c70`，9.008 秒/44.1 kHz/双声道、RMS 0.05783、peak 0.98、finite/nonzero 均为 true。
 - 源码链以 `memory_profile=低` 再次真实执行 GAME→DiffSinger→祥子 RVC，29.9 秒退出 0；输出 SHA256 `f59b3206941e77f0b9cda72475b082a16db15fa61e9eaf902b34f3f6ee60f08e`，9.008 秒/44.1 kHz/双声道、RMS 0.05298、peak 0.98、finite/nonzero 均为 true。该档位进入生成/转换缓存键；若走 Vevo2，flow steps 为 24。
 - 最终本机完整包的冻结 worker 也以 `memory_profile=低`、`generator=diffsinger` 完成新歌词任务：37.2 秒、退出码 0、没有 stderr 削波警告；输出 SHA256 `c7febb13ca4fa16031797d47986d0b250deae612bf69ae4349af54288dbdfa95`，9.008 秒/44.1 kHz/双声道、RMS 0.05507、peak 0.98、finite/nonzero 均为 true。
@@ -71,10 +71,19 @@
 - 关闭并行 GPU 负载后，使用全新歌词绕过改词缓存重跑：Vevo2→拼接→祥子 RVC→混音共 67.4 秒，任务 `completed/100%/export`。输出 9.008163 秒、44.1 kHz、双声道，RMS 0.04753、peak 0.98、finite/nonzero 均为 true，SHA256 `546d9e83342d84727176b43a253ac9250eb45789c0cfb6f5f1de5b93d0a3fb6e`；日志 2789 bytes，含结果和正常退出。
 - 启动恢复测试确认只把遗留 `pending/running` 记录转为失败，已完成记录保持不变；历史页日志包测试确认 ZIP 包含 `job.json`、`request.json`、`worker.log`。
 
+## 自动歌词强制对齐
+
+- Stable-ts 2.19.1 commit `e312072cc024ae9fceb25b057d7d18524873a02b`（MIT，上游 2026-05-30 归档）；OpenAI Whisper 20250625 commit `5f86d1d86363843179951550570367b37c5d6f78`（MIT）。独立 Python 3.10.20 / torch+torchaudio 2.9.1+cu130 环境 CUDA 可用。
+- 官方 multilingual `base.pt` 为 145,262,807 bytes，SHA256 `ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e`，与 OpenAI 官方 URL 内嵌哈希一致。
+- Whisper 官方 `jfk.flac` SHA256 `63a4b1e4c1dc655ac70961ffbf518acd249df237e5a0152faae9a4a836949715`。给定正确原文后强制对齐得到 22 词、0.32–10.26 秒、0 个零时长词、CUDA 峰值 469,291,008 bytes；两行输入保留换行并得到 0.32/8.30 秒两个句首。
+- 《春日影》已分离人声 20–50 秒片段 SHA256 `da727842efe90d8b1a087cf4b181d73b092e77df4a8f24c88b18ac51e1c976cb`。Whisper 日语转写得到 4 段/48 词，再以这四行作给定文本强制对齐，句级区间为 0–11.52、11.80–23.76、23.96–26.94、27.76–29.76 秒；48 个词中 1 个细粒度 token 为零时长，因此只宣称句级边界可用，不宣称自然歌声逐字完美。
+- 源码 JobManager 的无时间戳完整链“Whisper→GAME→DiffSinger→祥子 RVC→混音”32.5 秒完成；输出 9.008 秒、RMS 0.05424、peak 0.98、SHA256 `cfed28b63ad655bcfc247d8fae94c1c21f7fdd3c5fac8fb6c154cfe36c20ece5`。相同请求复跑 1.4 秒，日志同时证明对齐、生成和最终缓存命中。
+- 同步后的冻结完整包以全新歌词执行同一链路，61 秒完成；其中冷启动对齐约 24.9 秒。输出 9.008 秒、44.1 kHz、双声道、RMS 0.05515、peak 0.98、finite/nonzero 均为 true，SHA256 `b4e30346bcaa2e7ce15f94c77841cf2eb2b100eb9d7424c95adb05cf3787ee6e`。
+
 ## 未通过/未执行
 
 - 每个引擎 3～5 个可再分发初始音色尚未满足；当前祥子模型只允许本机使用的保守判断。
-- 改词 Vevo2 主路径已接入并真实通过；无时间戳长歌曲仍要求 LRC，尚未集成自动 ASR 强制对齐模型。
+- 改词 Vevo2 主路径与无时间戳 Stable-ts/Whisper 强制对齐均已接入并真实通过；复杂歌声若句级校验失败会要求 LRC，不会回退成静默均分。
 - GAME + DiffSinger 中文回退已真实完成；旧版 OpenCpop demo 权重没有独立模型/数据许可，因此只在本机使用，不能进入公开包。非中文 G2P、音素级歌词对齐仍未实现。
 - Legacy CUDA 11.8 机器未获得实体旧显卡实测；“Legacy”目前只代表发行目标，不宣称兼容性已验收。
 - OOM 故障注入验证了 CUDA 错误分类、后端退出后的 30/15 秒有限分段重试与交叉淡化拼接；当前 12 GB 显卡未发生真实 OOM，因此不宣称已完成实体 4–8 GB 显卡压力测试。MSST 也没有许可/格式匹配的轻量替代 checkpoint 可自动切换。

@@ -12,10 +12,10 @@ from typing import Callable
 import numpy as np
 import soundfile as sf
 
-from opencover.adapters.backends import DDSPAdapter, DiffSingerLegacyAdapter, GameAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
+from opencover.adapters.backends import AlignmentAdapter, DDSPAdapter, DiffSingerLegacyAdapter, GameAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
 from opencover.audio.processing import export_audio, ffmpeg_path, mix_tracks, normalize_input, validate_audio
 from opencover.core.retry_policy import chunk_sizes_for_profile, convert_with_oom_retry
-from opencover.lyrics.processing import LyricSegment, build_lyric_segments
+from opencover.lyrics.processing import LyricSegment, build_lyric_segments, lyrics_language, parse_lyrics, timed_lyrics_from_alignment
 from opencover.models.schema import VoiceModel
 from opencover.pipelines.original_cover import CoverRequest, separation_cache_key
 
@@ -41,7 +41,7 @@ def _digest(parts: list[str]) -> str:
 
 def backend_markers(root: Path) -> str:
     parts: list[str] = []
-    for name in ("vevo2", "game", "diffsinger"):
+    for name in ("vevo2", "game", "diffsinger", "alignment"):
         marker = root / "external_backends" / name / "backend.json"
         parts.append(marker.read_text(encoding="utf-8") if marker.is_file() else f"{name}:missing")
     return "\n".join(parts)
@@ -98,6 +98,7 @@ class LyricCoverPipeline:
         self.vevo2 = Vevo2Adapter(root / "external_backends" / "vevo2")
         self.game = GameAdapter(root / "external_backends" / "game")
         self.diffsinger = DiffSingerLegacyAdapter(root / "external_backends" / "diffsinger")
+        self.alignment = AlignmentAdapter(root / "external_backends" / "alignment")
         self.rvc = RVCAdapter(root / "external_backends" / "rvc")
         self.ddsp = DDSPAdapter(root / "external_backends" / "ddsp")
 
@@ -195,6 +196,55 @@ class LyricCoverPipeline:
         ]
         return next((path for path in candidates if path.is_file()), candidates[0])
 
+    def _alignment_runner(self) -> Path:
+        candidates = [
+            self.root / "src" / "opencover" / "workers" / "alignment_runtime.py",
+            self.root / "_internal" / "workers" / "alignment_runtime.py",
+            Path(getattr(sys, "_MEIPASS", "")) / "workers" / "alignment_runtime.py",
+        ]
+        return next((path for path in candidates if path.is_file()), candidates[0])
+
+    def _align_plain_lyrics(
+        self, vocals: Path, original: str, duration: float, job_dir: Path,
+        report: Callable[[str, int, str], None],
+    ) -> str:
+        cues = parse_lyrics(original)
+        if any(cue.start is not None for cue in cues):
+            report("align_lyrics", 24, "已读取歌词时间戳")
+            return original
+        status = self.alignment.status()
+        if not status.runnable:
+            report("align_lyrics", 24, "自动对齐组件未就绪，使用逐行保守分段")
+            return original
+        vocal_stat = vocals.stat()
+        marker = (self.root / "external_backends" / "alignment" / "backend.json").read_text(encoding="utf-8")
+        key = _digest([str(vocals.resolve()), str(vocal_stat.st_size), str(vocal_stat.st_mtime_ns), original, marker])
+        cached = self.root / "workspace" / "cache" / "lyric_alignment" / key / "alignment.json"
+        if cached.is_file() and cached.stat().st_size > 32:
+            report("align_lyrics", 24, "已复用 Whisper 歌词对齐缓存")
+        else:
+            report("align_lyrics", 22, "正在用 Whisper 将原歌词强制对齐到分离人声")
+            request_file = job_dir / "alignment" / "request.json"
+            result_file = job_dir / "alignment" / "alignment.json"
+            request_file.parent.mkdir(parents=True, exist_ok=True)
+            request_file.write_text(json.dumps({
+                "root": str(self.root), "audio_path": str(vocals), "text": original,
+                "language": lyrics_language(original), "output_path": str(result_file),
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            try:
+                self.alignment.align(request_file, self._alignment_runner())
+            except Exception as exc:
+                raise RuntimeError(f"自动歌词对齐失败；请检查原歌词或改用 LRC：{exc}") from exc
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            partial = cached.with_suffix(".json.part")
+            shutil.copy2(result_file, partial); partial.replace(cached)
+            report("align_lyrics", 24, "Whisper 原歌词强制对齐完成")
+        try:
+            data = json.loads(cached.read_text(encoding="utf-8"))
+            return timed_lyrics_from_alignment(original, data, duration)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"自动歌词对齐结果无效；请改用 LRC：{exc}") from exc
+
     def _generate_diffsinger(
         self, manifest: list[dict[str, object]], segments: list[LyricSegment], segment_dir: Path,
         report: Callable[[str, int, str], None],
@@ -271,8 +321,8 @@ class LyricCoverPipeline:
         report = progress or (lambda stage, value, message: None)
         vocals, accompaniment = self._separate(request, job_dir, report)
         _, _, duration = validate_audio(vocals)
-        report("align_lyrics", 24, "正在解析歌词和时间戳")
-        segments = build_lyric_segments(request.original_lyrics, request.new_lyrics, duration, request.strategy)
+        aligned_original = self._align_plain_lyrics(vocals, request.original_lyrics, duration, job_dir, report)
+        segments = build_lyric_segments(aligned_original, request.new_lyrics, duration, request.strategy)
 
         source_stat = request.input_path.stat()
         marker = backend_markers(self.root)

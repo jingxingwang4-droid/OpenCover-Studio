@@ -67,3 +67,28 @@ def test_backend_error_includes_captured_stderr(tmp_path: Path) -> None:
         assert "具体失败原因" in str(exc)
     else:
         raise AssertionError("后端失败必须抛出包含 stderr 的异常")
+
+
+def test_alignment_adapter_requires_verified_runtime_and_output(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "alignment"
+    python = root / "runtime" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"python")
+    (root / "runtime" / "Lib" / "site-packages" / "stable_whisper").mkdir(parents=True)
+    (root / "models").mkdir()
+    (root / "models" / "base.pt").write_bytes(b"model")
+    (root / "backend.json").write_text(json.dumps({"smoke_test_passed": True, "commit": "verified"}), encoding="utf-8")
+    runner = tmp_path / "alignment_runtime.py"; runner.write_text("", encoding="utf-8")
+    output = tmp_path / "alignment.json"
+    request = tmp_path / "request.json"
+    request.write_text(json.dumps({"output_path": str(output)}), encoding="utf-8")
+
+    def fake_run(args: list[str], cwd: Path, timeout: int = 3600) -> None:
+        assert args[0] == str(python)
+        assert timeout == 3600
+        output.write_text('{"segments":[{"start":0,"end":1}]}', encoding="utf-8")
+
+    monkeypatch.setattr(backends, "run_checked", fake_run)
+    adapter = backends.AlignmentAdapter(root)
+    assert adapter.status().runnable is True
+    assert adapter.align(request, runner) == output

@@ -19,7 +19,7 @@ function Copy-Tree([string]$Source, [string]$Destination) {
 }
 
 Copy-Tree $base $target
-foreach ($backend in @('msst', 'rvc', 'ddsp', 'vevo2', 'game', 'diffsinger')) {
+foreach ($backend in @('msst', 'rvc', 'ddsp', 'vevo2', 'game', 'diffsinger', 'alignment')) {
     Copy-Tree (Join-Path 'external_backends' $backend) (Join-Path $target "external_backends\$backend")
 }
 Copy-Tree 'weights\rvc' (Join-Path $target 'weights\rvc')

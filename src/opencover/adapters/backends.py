@@ -178,6 +178,41 @@ class DiffSingerLegacyAdapter:
         run_checked([str(self._python()), "-X", "utf8", str(runner), str(request_file)], self.root, timeout=7200)
 
 
+class AlignmentAdapter:
+    backend_id = "alignment"
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def status(self) -> BackendStatus:
+        metadata = _marker(self.root)
+        runtime = _runtime_python(self.root)
+        stable_package = self.root / "runtime" / "Lib" / "site-packages" / "stable_whisper"
+        model = self.root / "models" / "base.pt"
+        installed = runtime.is_file() and stable_package.is_dir() and model.is_file()
+        runnable = installed and metadata.get("smoke_test_passed") is True
+        detail = str(metadata.get("detail", "Whisper 强制对齐已通过真实测试")) if runnable else (
+            "文件存在但尚未通过真实强制对齐" if installed else "缺少独立运行时、Stable-ts 或 Whisper base 模型"
+        )
+        return BackendStatus(
+            "alignment", "歌词对齐", installed, runnable,
+            str(metadata.get("commit", "未验证")), detail,
+        )
+
+    def align(self, request_file: Path, runner: Path) -> Path:
+        status = self.status()
+        if not status.runnable:
+            raise BackendUnavailable(status.detail)
+        if not runner.is_file():
+            raise BackendUnavailable("歌词对齐运行脚本缺失")
+        run_checked([str(_runtime_python(self.root)), "-X", "utf8", str(runner), str(request_file)], self.root, timeout=3600)
+        request = json.loads(request_file.read_text(encoding="utf-8"))
+        output = Path(str(request["output_path"]))
+        if not output.is_file() or output.stat().st_size < 32:
+            raise RuntimeError("歌词对齐后端没有生成有效 JSON")
+        return output
+
+
 class RVCAdapter:
     backend_id = "rvc"
 

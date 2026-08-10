@@ -63,6 +63,39 @@ def parse_lyrics(text: str) -> list[LyricCue]:
     return sorted(cues, key=lambda cue: cue.start or 0.0) if any(c.start is not None for c in cues) else cues
 
 
+def lyrics_language(text: str) -> str:
+    """Choose the Whisper tokenizer language from the user's lyric script."""
+    if re.search(r"[\u3040-\u30ff]", text):
+        return "ja"
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return "zh"
+    return "en"
+
+
+def timed_lyrics_from_alignment(original: str, alignment: dict[str, object], duration: float) -> str:
+    lines = [cue.text for cue in parse_lyrics(original)]
+    raw_segments = alignment.get("segments")
+    if not isinstance(raw_segments, list) or len(raw_segments) != len(lines):
+        raise ValueError(f"自动对齐返回 {len(raw_segments or []) if isinstance(raw_segments, list) else 0} 段，但原歌词有 {len(lines)} 行")
+    result: list[str] = []
+    last_start = -1.0
+    for line, raw in zip(lines, raw_segments):
+        if not isinstance(raw, dict):
+            raise ValueError("自动对齐结果格式无效")
+        try:
+            start = float(raw["start"])
+            end = float(raw["end"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("自动对齐分段缺少有效时间") from exc
+        if not 0 <= start < end <= duration + 0.5 or start <= last_start:
+            raise ValueError("自动对齐时间不是严格递增的有效区间")
+        last_start = start
+        minutes = int(start // 60)
+        seconds = start - minutes * 60
+        result.append(f"[{minutes:02d}:{seconds:05.2f}]{line}")
+    return "\n".join(result)
+
+
 def _units(text: str) -> int:
     return max(1, len(_PUNCTUATION.sub("", text)))
 

@@ -22,6 +22,8 @@
 - 原版 DiffSinger 官方仓库（MIT）：https://github.com/MoonInTheRiver/DiffSinger
 - 原版官方预训练模型 release：https://github.com/MoonInTheRiver/DiffSinger/releases/tag/pretrain-model
 - 原版官方 README 链接的 Hugging Face demo/权重：https://huggingface.co/spaces/Silentlin/DiffSinger
+- Stable-ts 强制对齐（MIT，固定归档前最后提交）：https://github.com/jianfch/stable-ts
+- OpenAI Whisper 源码、模型卡与官方模型：https://github.com/openai/whisper
 - YingMusic-Singer-Plus（无需精细对齐的未来改词候选）：https://github.com/ASLP-lab/YingMusic-Singer-Plus
 - YingMusic-Singer-Plus 官方权重：https://huggingface.co/ASLP-lab/YingMusic-Singer-Plus
 - 公共领域分离测试音频：https://commons.wikimedia.org/wiki/File:Irene_Dunne_singing_in_Love_Affair.ogg

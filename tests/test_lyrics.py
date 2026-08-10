@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from opencover.lyrics.processing import build_lyric_segments, decode_lyrics_file, parse_lyrics
+from opencover.lyrics.processing import (
+    build_lyric_segments, decode_lyrics_file, lyrics_language, parse_lyrics,
+    timed_lyrics_from_alignment,
+)
 
 
 def test_decode_gbk_and_parse_lrc(tmp_path: Path) -> None:
@@ -34,3 +37,26 @@ def test_long_untimed_song_requires_more_lines() -> None:
 def test_balanced_strategy_rejects_extreme_density() -> None:
     with pytest.raises(ValueError, match="明显长于原句"):
         build_lyric_segments("短句", "这是一句明显过长而且无法合理塞入原旋律的新歌词", duration=6.0, strategy="均衡")
+
+
+def test_alignment_result_preserves_user_lines_and_detects_script() -> None:
+    aligned = timed_lyrics_from_alignment(
+        "春天到来\n花在歌唱",
+        {"segments": [{"start": 1.25, "end": 4.0}, {"start": 5.5, "end": 9.0}]},
+        duration=10.0,
+    )
+    assert aligned == "[00:01.25]春天到来\n[00:05.50]花在歌唱"
+    assert lyrics_language(aligned) == "zh"
+    assert lyrics_language("春の日、歌う") == "ja"
+    assert lyrics_language("sing a song") == "en"
+
+
+def test_alignment_rejects_segment_count_or_non_monotonic_time() -> None:
+    with pytest.raises(ValueError, match="原歌词有 2 行"):
+        timed_lyrics_from_alignment("第一行\n第二行", {"segments": [{"start": 0.0, "end": 1.0}]}, 3.0)
+    with pytest.raises(ValueError, match="严格递增"):
+        timed_lyrics_from_alignment(
+            "第一行\n第二行",
+            {"segments": [{"start": 1.0, "end": 2.0}, {"start": 0.5, "end": 2.5}]},
+            3.0,
+        )

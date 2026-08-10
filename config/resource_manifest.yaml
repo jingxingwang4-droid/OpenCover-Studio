@@ -422,6 +422,66 @@ resources:
     status: installed_weights_only_and_inference_tested_local_only
     notes: Hugging Face LFS size matched; weights_only=True succeeded with only state_dict; loaded in real synthesis. Upstream docs state the universal vocoder used about 70 hours of singing data, so no redistribution is inferred.
 
+  - resource_id: stable_ts_alignment_source
+    type: optional_backend_source
+    name: Stable-ts forced alignment
+    author: Jian
+    official_repository: https://github.com/jianfch/stable-ts
+    source_page: https://github.com/jianfch/stable-ts/tree/e312072cc024ae9fceb25b057d7d18524873a02b
+    download_url: https://github.com/jianfch/stable-ts/archive/e312072cc024ae9fceb25b057d7d18524873a02b.zip
+    version: 2.19.1
+    tag: ""
+    commit: e312072cc024ae9fceb25b057d7d18524873a02b
+    file_size: 2787619
+    sha256: 2c7982b841739611203684eab23c496306ca44040ce4d38b92ba3bd80479d993
+    license: MIT
+    redistribution_allowed: true
+    install_directory: external_backends/alignment/stable-ts
+    backend: alignment
+    last_verified: "2026-08-10"
+    status: installed_cuda_forced_alignment_tested
+    notes: 官方仓库已于 2026-05-30 归档并暂停开发；固定最后提交。model.align 已对官方 JFK 正确原文和真实日语歌唱人声完成测试，风险在文档中明确披露。
+
+  - resource_id: openai_whisper_alignment_source
+    type: optional_backend_source
+    name: OpenAI Whisper alignment runtime
+    author: OpenAI
+    official_repository: https://github.com/openai/whisper
+    source_page: https://github.com/openai/whisper/tree/5f86d1d86363843179951550570367b37c5d6f78
+    download_url: https://github.com/openai/whisper/archive/5f86d1d86363843179951550570367b37c5d6f78.zip
+    version: "20250625"
+    tag: ""
+    commit: 5f86d1d86363843179951550570367b37c5d6f78
+    file_size: 7273251
+    sha256: 972be78496e0a3b442b03cead77ca0650a106bb1f0243b1f39929b46a2fb95cc
+    license: MIT
+    redistribution_allowed: true
+    install_directory: external_backends/alignment/whisper
+    backend: alignment
+    last_verified: "2026-08-10"
+    status: installed_cuda_forced_alignment_tested
+    notes: 官方模型/代码；Stable-ts 2.19.1 声明兼容的最后 Whisper 版本。独立 Python 3.10 / torch 2.9.1+cu130 环境已通过 CUDA。
+
+  - resource_id: openai_whisper_base_alignment_model
+    type: model
+    name: OpenAI Whisper base multilingual
+    author: OpenAI
+    official_repository: https://github.com/openai/whisper
+    source_page: https://github.com/openai/whisper/blob/5f86d1d86363843179951550570367b37c5d6f78/model-card.md
+    download_url: https://openaipublic.azureedge.net/main/whisper/models/ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e/base.pt
+    version: base multilingual
+    tag: ""
+    commit: 5f86d1d86363843179951550570367b37c5d6f78
+    file_size: 145262807
+    sha256: ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e
+    license: MIT
+    redistribution_allowed: true
+    install_directory: external_backends/alignment/models/base.pt
+    backend: alignment
+    last_verified: "2026-08-10"
+    status: installed_sha256_cuda_alignment_tested
+    notes: OpenAI 官方下载地址把预期 SHA256 写入 URL；本机 145262807 bytes 文件逐字节匹配。JFK 22 词无零时长，真实日语歌声四行句级边界有效。
+
   - resource_id: yingmusic_singer_plus_candidate
     type: research_candidate
     name: YingMusic-Singer-Plus annotation-free lyric editing backend

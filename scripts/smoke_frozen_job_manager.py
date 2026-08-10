@@ -11,7 +11,10 @@ from opencover.core.job_manager import JobManager
 from opencover.storage.database import Database
 
 
-def main(root_arg: str, cancel_test: bool = False, lyrics: str | None = None) -> int:
+def main(
+    root_arg: str, cancel_test: bool = False, lyrics: str | None = None,
+    source_mode: bool = False, generator: str = "auto",
+) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     root = Path(root_arg).resolve()
@@ -38,7 +41,8 @@ def main(root_arg: str, cancel_test: bool = False, lyrics: str | None = None) ->
         app.quit()
 
     manager.finished.connect(finished)
-    setattr(sys, "frozen", True)
+    if not source_mode:
+        setattr(sys, "frozen", True)
     job_id = manager.submit_lyric({
         "root": str(root),
         "input_path": str(root / "assets" / "preview_sources" / "neutral_melody.wav"),
@@ -48,6 +52,7 @@ def main(root_arg: str, cancel_test: bool = False, lyrics: str | None = None) ->
             "original_lyrics": "啦啦啦啦啦啦啦啦啦啦",
             "new_lyrics": lyrics or ("取消测试正在眼前，听见花开的声音" if cancel_test else "新的春天正在眼前，听见花开的声音"),
             "strategy": "强制", "pitch": 0, "balance": "均衡", "output_format": "wav",
+            "generator": generator,
         },
     })
     if cancel_test:
@@ -75,6 +80,6 @@ def main(root_arg: str, cancel_test: bool = False, lyrics: str | None = None) ->
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(); parser.add_argument("root"); parser.add_argument("--cancel", action="store_true"); parser.add_argument("--lyrics")
+    parser = argparse.ArgumentParser(); parser.add_argument("root"); parser.add_argument("--cancel", action="store_true"); parser.add_argument("--lyrics"); parser.add_argument("--source", action="store_true"); parser.add_argument("--generator", choices=("auto", "vevo2", "diffsinger"), default="auto")
     arguments = parser.parse_args()
-    raise SystemExit(main(arguments.root, arguments.cancel, arguments.lyrics))
+    raise SystemExit(main(arguments.root, arguments.cancel, arguments.lyrics, arguments.source, arguments.generator))

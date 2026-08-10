@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from opencover import __version__
-from opencover.adapters.backends import DDSPAdapter, DiffSingerLegacyAdapter, GameAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
+from opencover.adapters.backends import AlignmentAdapter, DDSPAdapter, DiffSingerLegacyAdapter, GameAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
 from opencover.adapters.base import BackendStatus
 from opencover.config import Settings
 from opencover.core.hardware_detector import HardwareInfo
@@ -168,7 +168,7 @@ class LyricPage(QWidget):
 
     def __init__(self, registry: ModelRegistry, paths: AppPaths, settings: Settings):
         super().__init__(); self.registry = registry; self.paths = paths; self.settings = settings
-        page, layout = panel_layout("改词翻唱 Beta", "Beta：复杂歌词可能出现咬字、节奏或旋律偏差；长音频建议导入带时间戳的 LRC。")
+        page, layout = panel_layout("改词翻唱 Beta", "Beta：无时间戳原歌词会优先自动强制对齐；复杂歌声仍可改用带时间戳的 LRC。")
         QVBoxLayout(self).addWidget(page); self.drop = AudioDropArea(); layout.addWidget(self.drop)
         self.input_player = AudioPlayer(); layout.addWidget(self.input_player)
         self.drop.path_changed.connect(lambda value: self.input_player.set_source(Path(value)))
@@ -648,7 +648,7 @@ class ComponentPage(QWidget):
             Vevo2Adapter(self.paths.external_backends / "vevo2").status(),
             GameAdapter(self.paths.external_backends / "game").status(),
             DiffSingerLegacyAdapter(self.paths.external_backends / "diffsinger").status(),
-            BackendStatus("alignment", "歌词对齐", True, True, "LRC/逐行分段", "LRC 时间戳和逐行保守分段已可用；无时间戳长歌曲会要求补充 LRC"),
+            AlignmentAdapter(self.paths.external_backends / "alignment").status(),
         ]
         self.table.setRowCount(len(statuses))
         for r, item in enumerate(statuses):

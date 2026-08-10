@@ -34,3 +34,5 @@
 - 复核 YingMusic-Singer-Plus 与 WhisperX；前者登记为无需精细对齐的未来候选，因 13.05 GB checkpoint、Windows 预构建缺失和 VAE 独立许可暂不安装。
 - 任务系统新增逐任务 `worker.log`、异常退出记录恢复、ZIP 日志包导出、托盘实时进度和历史音色头像；pytest 增至 34 项。
 - 关闭并行 GPU 重载后，用全新歌词完成冻结 Vevo2→丰川祥子 RVC→混音未缓存重试，67.4 秒产生真实非静音 WAV。
+- 新增隔离的 Stable-ts 2.19.1 + OpenAI Whisper 20250625/base 歌词强制对齐组件；无时间戳原歌词现自动对齐到 MSST 人声并独立缓存，行数/正时长/递增校验失败时要求 LRC。
+- 官方 JFK 22 词、真实《春日影》日语歌声四行、源码与冻结 GAME→DiffSinger→祥子 RVC 完整链均通过；pytest 增至 37 项。
