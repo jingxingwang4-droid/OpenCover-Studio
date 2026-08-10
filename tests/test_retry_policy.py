@@ -5,13 +5,15 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from opencover.core.retry_policy import convert_with_oom_retry, is_cuda_oom
+from opencover.core.retry_policy import chunk_sizes_for_profile, convert_with_oom_retry, is_cuda_oom
 
 
 def test_cuda_oom_classification_is_specific() -> None:
     assert is_cuda_oom("RuntimeError: CUDA out of memory. Tried to allocate 2 GiB")
     assert is_cuda_oom("CUDNN_STATUS_ALLOC_FAILED")
     assert not is_cuda_oom("模型文件不存在")
+    assert chunk_sizes_for_profile("极低") == (15.0, 8.0)
+    assert chunk_sizes_for_profile("invalid") == (30.0, 15.0)
 
 
 def test_conversion_retries_cuda_oom_with_bounded_chunks(tmp_path: Path) -> None:

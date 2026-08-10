@@ -32,5 +32,7 @@ def test_conversion_cache_ignores_mix_but_tracks_model_hash(tmp_path: Path) -> N
     balanced = CoverRequest(source, "rvc", first, 0, "均衡")
     vocal = CoverRequest(source, "rvc", first, 0, "人声更突出")
     replaced = CoverRequest(source, "rvc", updated, 0, "均衡")
+    low_memory = CoverRequest(source, "rvc", first, 0, "均衡", memory_profile="低")
     assert cache_key(balanced) == cache_key(vocal)
     assert cache_key(balanced) != cache_key(replaced)
+    assert cache_key(balanced) != cache_key(low_memory)

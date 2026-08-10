@@ -21,7 +21,7 @@ def main() -> int:
         input_path=root / "assets" / "preview_sources" / "neutral_melody.wav",
         engine="rvc", voice=voice, original_lyrics="啦啦啦啦啦啦啦啦",
         new_lyrics="回退链路现在成功", strategy="强制", pitch=0, balance="均衡", output_format="wav",
-        generator="diffsinger",
+        generator="diffsinger", memory_profile="低",
     )
     events: list[dict[str, object]] = []
     output = pipeline.run(

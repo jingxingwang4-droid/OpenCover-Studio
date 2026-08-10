@@ -67,9 +67,9 @@ def mix_tracks(vocal_path: Path, accompaniment_path: Path, output: Path, balance
         vocal_lufs = meter.integrated_loudness(vocal)
         accompaniment_lufs = meter.integrated_loudness(accompaniment)
         if np.isfinite(vocal_lufs):
-            vocal = pyln.normalize.loudness(vocal, vocal_lufs, -18.0)
+            vocal *= 10.0 ** ((-18.0 - vocal_lufs) / 20.0)
         if np.isfinite(accompaniment_lufs):
-            accompaniment = pyln.normalize.loudness(accompaniment, accompaniment_lufs, -20.0)
+            accompaniment *= 10.0 ** ((-20.0 - accompaniment_lufs) / 20.0)
     except (ValueError, OverflowError):
         pass
     mixed = vocal * vocal_gain + accompaniment * accompaniment_gain

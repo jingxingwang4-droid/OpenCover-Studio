@@ -21,6 +21,10 @@
 
 基础包要求的每个引擎 3～5 个可再分发初始音色仍未达到：现有祥子、RVC 示例和普通 DDSP 社区模型均缺少足以公开打包的完整训练数据/角色权利证据。Vevo2 主路径和中文 GAME + DiffSinger 回退均已真实接入，但 DiffSinger 旧版权重未给出独立模型/数据许可，故只在本机完整包可用。自动 ASR 强制对齐、非中文回退和无 LRC 长歌曲仍未就绪。
 
+2026-08-10 追加复核了两个方向。WhisperX 是 BSD-2-Clause 的语音 ASR/词级对齐工具，但对现成歌词的强制对齐接口、歌声准确率及中日文专用 alignment model 均没有足够证据，因此未下载后宣称解决歌声对齐。YingMusic-Singer-Plus 官方方案直接接受旋律音频和新歌词，不要求人工音素级对齐；源码 HEAD `baa409c...`，官方模型 revision `9b3f444...`，五个主要 checkpoint 合计 13,052,111,592 bytes。其代码/主权重为 CC BY 4.0，但 Stable Audio VAE 使用单独的 Stability AI Community License，官方 Windows 预构建仍标记 Coming soon，批处理示例还面向 4/8 GPU，故只登记为后续候选。
+
+RVC 初始音色复核仍未找到能同时证明“模型文件许可、训练声音权利、允许随软件再分发”的 3～5 个音色。AEmotionStudio 仓库是 RVC 底模转换而非独立角色音色；Razer112/Public_Models 的专用条款明确禁止未经书面许可再分发；其他角色/真人仓库仅标 MIT 不能自动授予声音和训练数据权利。基础公开包继续保守留空，避免把仓库标签当成声音授权。
+
 ## 发布门槛
 
 每个后端转为“可用”前必须记录：固定 commit/tag、依赖锁、代码许可证、模型许可证与 SHA256、真实输入和真实输出的音频信息、运行命令、耗时、输出非静音检查和人工试听结论。RVC 为适配 Windows、PyTorch 2.9、PyAV 12 与中文路径，应用了可审计的兼容修复：Fairseq 无符号链接安装、旧 checkpoint tuple、完整 index `Path` 保留、PyAV 模式、显式 `weights_only`，以及把 FAISS index 按哈希复制到 ASCII 临时路径后加载。

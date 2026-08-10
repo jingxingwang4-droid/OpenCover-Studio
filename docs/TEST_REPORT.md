@@ -7,7 +7,7 @@
 - MSST/RVC 为 PyTorch 2.9.1+cu130；DDSP 为独立 Python 3.11.5、PyTorch/torchaudio 2.9.1+cu130；三者 CUDA tensor smoke test 均通过。
 - FFmpeg 9.0 essentials build。
 - 应用启动时调用后端 PyTorch 真实执行 CUDA FP16 tensor 运算：`cuda_smoke=True`、`fp16_supported=True`；Windows `GlobalMemoryStatusEx` 检出 31.4 GB RAM，本轮最终磁盘可用空间为 824.3 GB。
-- `.venv\Scripts\python.exe -m pytest -q`：`33 passed`。覆盖歌词编码/LRC/密度限制、Vevo2 与 DiffSinger 生成器选择、缺失可选 marker、GAME 音符映射、短句拼接、模型哈希缓存、DDSP `config.yaml` 导入规则、后端 UTF-8/GBK 错误透传、音色元数据编辑/删除、历史任务操作、播放器音量、CUDA OOM 分类/有限分段重试，以及资源安装越界/覆盖/ZIP 符号链接防护。
+- `.venv\Scripts\python.exe -m pytest -q`：`33 passed`。覆盖歌词编码/LRC/密度限制、Vevo2 与 DiffSinger 生成器选择、缺失可选 marker、GAME 音符映射、短句拼接、显存档位缓存/OOM 分段、DDSP `config.yaml` 导入规则、后端 UTF-8/GBK 错误透传、音色元数据编辑/置顶/删除、首页真实记录、输入播放器、设置持久化、历史操作、播放器音量，以及资源安装越界/覆盖/ZIP 符号链接防护。
 
 ## MSST
 
@@ -64,6 +64,8 @@
 - 最初复用 windowed GUI EXE 作为 worker 时无 stdout 且卡住，已替换为约 65.30 MB 的 console-subsystem `OpenCoverStudioWorker.exe`；Qt 使用 `CREATE_NO_WINDOW` 隐藏启动。Modern/Legacy 冻结 worker 的资源缓存任务均退出 0、产生 result、stderr 为 0 bytes。
 - `Modern-LocalFull` 最终运行后为 23.61 GiB（含运行时生成的 Python 缓存）。其专用 worker 的 Vevo2 真实全链耗时 114 秒、退出码 0，输出 SHA256 `41f0bb4c...9143`，9.008 秒/44.1 kHz/双声道、RMS 0.05142、finite=True。
 - 更新后的冻结 worker 以任务参数明确选择 `generator=diffsinger`，70.6 秒完整执行 GAME→DiffSinger→祥子 RVC→混音，进度 0–100 单调且退出码 0。输出 SHA256 `b0568c9ad5b45d225a2ee0fcce1c26a7657fb574a57c16996094075b03583c70`，9.008 秒/44.1 kHz/双声道、RMS 0.05783、peak 0.98、finite/nonzero 均为 true。
+- 源码链以 `memory_profile=低` 再次真实执行 GAME→DiffSinger→祥子 RVC，29.9 秒退出 0；输出 SHA256 `f59b3206941e77f0b9cda72475b082a16db15fa61e9eaf902b34f3f6ee60f08e`，9.008 秒/44.1 kHz/双声道、RMS 0.05298、peak 0.98、finite/nonzero 均为 true。该档位进入生成/转换缓存键；若走 Vevo2，flow steps 为 24。
+- 最终本机完整包的冻结 worker 也以 `memory_profile=低`、`generator=diffsinger` 完成新歌词任务：37.2 秒、退出码 0、没有 stderr 削波警告；输出 SHA256 `c7febb13ca4fa16031797d47986d0b250deae612bf69ae4349af54288dbdfa95`，9.008 秒/44.1 kHz/双声道、RMS 0.05507、peak 0.98、finite/nonzero 均为 true。
 - Qt JobManager 从该 worker 收到完整 UTF-8 JSON Lines，并将含中文的真实输出路径逐字写入 SQLite。Vevo2 `generate` 阶段在进度 40% 取消后状态为 `cancelled`、无输出，进程树检查 `orphan_count=0`。
 
 ## 未通过/未执行

@@ -163,7 +163,7 @@ class ModelImporter:
     def update_model(
         self, model_id: str, *, display_name: str, description: str, recommended_pitch: int,
         languages: list[str], avatar: Path | None = None, preview: Path | None = None,
-        remove_preview: bool = False,
+        remove_preview: bool = False, featured: bool | None = None,
     ) -> VoiceModel:
         model = self.registry.get(model_id)
         if model is None:
@@ -178,6 +178,8 @@ class ModelImporter:
             "recommended_pitch": recommended_pitch,
             "languages": [item.strip() for item in languages if item.strip()],
         }
+        if featured is not None:
+            updates["featured"] = featured
         try:
             if avatar is not None:
                 avatar_name = self._avatar(avatar, temporary, display_name)

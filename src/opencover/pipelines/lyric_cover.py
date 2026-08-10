@@ -14,7 +14,7 @@ import soundfile as sf
 
 from opencover.adapters.backends import DDSPAdapter, DiffSingerLegacyAdapter, GameAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
 from opencover.audio.processing import export_audio, ffmpeg_path, mix_tracks, normalize_input, validate_audio
-from opencover.core.retry_policy import convert_with_oom_retry
+from opencover.core.retry_policy import chunk_sizes_for_profile, convert_with_oom_retry
 from opencover.lyrics.processing import LyricSegment, build_lyric_segments
 from opencover.models.schema import VoiceModel
 from opencover.pipelines.original_cover import CoverRequest, separation_cache_key
@@ -32,6 +32,7 @@ class LyricCoverRequest:
     balance: str = "均衡"
     output_format: str = "wav"
     generator: str = "auto"
+    memory_profile: str = "标准"
 
 
 def _digest(parts: list[str]) -> str:
@@ -277,7 +278,7 @@ class LyricCoverPipeline:
         marker = backend_markers(self.root)
         generation_key = _digest([
             str(request.input_path.resolve()), str(source_stat.st_size), str(source_stat.st_mtime_ns),
-            request.original_lyrics, request.new_lyrics, request.strategy, request.generator, marker,
+            request.original_lyrics, request.new_lyrics, request.strategy, request.generator, request.memory_profile, marker,
         ])
         generation_cache = self.root / "workspace" / "cache" / "lyric_generation" / generation_key
         generated_vocal = generation_cache / "edited_vocal.wav"
@@ -288,8 +289,9 @@ class LyricCoverPipeline:
             report("segment", 30, f"正在准备 {len(segments)} 个短句")
             manifest = self._extract_segments(vocals, segments, segment_dir)
             request_file = segment_dir / "vevo2_request.json"
+            flow_steps = {"极低": 16, "低": 24, "标准": 32, "高质量": 32}.get(request.memory_profile, 32)
             request_file.write_text(json.dumps({
-                "root": str(self.root), "seed": 1234, "flow_matching_steps": 32, "segments": manifest,
+                "root": str(self.root), "seed": 1234, "flow_matching_steps": flow_steps, "segments": manifest,
             }, ensure_ascii=False, indent=2), encoding="utf-8")
             vevo_error: Exception | None = None
             use_vevo = request.generator in {"auto", "vevo2"} and self.vevo2.status().runnable
@@ -328,7 +330,7 @@ class LyricCoverPipeline:
             report("stitch", 68, "改词短句已校正时长并拼接")
 
         model_identity = ":".join(f"{name}={digest}" for name, digest in sorted(request.voice.sha256.items()) if name in request.voice.model_files + request.voice.index_files + request.voice.config_files)
-        conversion_key = _digest([generation_key, request.engine, request.voice.id, str(request.pitch), model_identity])
+        conversion_key = _digest([generation_key, request.engine, request.voice.id, str(request.pitch), request.memory_profile, model_identity])
         final_key = _digest([conversion_key, request.balance, request.output_format])
         extension = request.output_format.lower()
         output = self.root / "workspace" / "outputs" / f"{request.input_path.stem}_改词_{request.voice.id}_{final_key[:10]}.{extension}"
@@ -351,7 +353,10 @@ class LyricCoverPipeline:
             else:
                 config = model_dir / request.voice.config_files[0] if request.voice.config_files else None
                 converter = lambda source, target: self.ddsp.convert(source, target, model, request.pitch, config)
-            convert_with_oom_retry(generated_vocal, converted_raw, converter, lambda message: report("convert", 76, message))
+            convert_with_oom_retry(
+                generated_vocal, converted_raw, converter, lambda message: report("convert", 76, message),
+                chunk_sizes_for_profile(request.memory_profile),
+            )
             conversion_cache.parent.mkdir(parents=True, exist_ok=True)
             partial = conversion_cache.with_suffix(".wav.part")
             shutil.copy2(converted_raw, partial); partial.replace(conversion_cache)

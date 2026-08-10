@@ -8,7 +8,7 @@ from typing import Callable
 
 from opencover.adapters.backends import DDSPAdapter, MSSTAdapter, RVCAdapter
 from opencover.audio.processing import export_audio, ffmpeg_path, mix_tracks, normalize_input
-from opencover.core.retry_policy import convert_with_oom_retry
+from opencover.core.retry_policy import chunk_sizes_for_profile, convert_with_oom_retry
 from opencover.models.schema import VoiceModel
 
 
@@ -20,12 +20,13 @@ class CoverRequest:
     pitch: int
     balance: str
     output_format: str = "wav"
+    memory_profile: str = "标准"
 
 
 def cache_key(request: CoverRequest) -> str:
     stat = request.input_path.stat()
     model_identity = ":".join(f"{name}={digest}" for name, digest in sorted(request.voice.sha256.items()) if name in request.voice.model_files + request.voice.index_files + request.voice.config_files)
-    data = f"{request.input_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}:{request.engine}:{request.voice.id}:{request.pitch}:{model_identity}"
+    data = f"{request.input_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}:{request.engine}:{request.voice.id}:{request.pitch}:{request.memory_profile}:{model_identity}"
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
@@ -140,7 +141,10 @@ class OriginalCoverPipeline:
                 converter = lambda source, target: self.ddsp.convert(source, target, model, request.pitch, config)
             else:
                 raise RuntimeError(f"不支持的音色引擎：{request.engine}")
-            convert_with_oom_retry(vocals, converted_raw, converter, lambda message: report("convert", 62, message))
+            convert_with_oom_retry(
+                vocals, converted_raw, converter, lambda message: report("convert", 62, message),
+                chunk_sizes_for_profile(request.memory_profile),
+            )
             conversion_cache.parent.mkdir(parents=True, exist_ok=True)
             partial = conversion_cache.with_suffix(".wav.part")
             shutil.copy2(converted_raw, partial); partial.replace(conversion_cache)

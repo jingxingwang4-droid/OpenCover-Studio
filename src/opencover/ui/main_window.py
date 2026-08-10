@@ -62,8 +62,8 @@ class HomePage(QWidget):
     navigate = Signal(str)
     import_requested = Signal()
 
-    def __init__(self, hardware: HardwareInfo, paths: AppPaths):
-        super().__init__()
+    def __init__(self, hardware: HardwareInfo, paths: AppPaths, database: Database, registry: ModelRegistry):
+        super().__init__(); self.database = database; self.registry = registry
         page, layout = panel_layout("OpenCover Studio", "本地、可审计的 AI 歌曲翻唱工作台")
         QVBoxLayout(self).addWidget(page)
         hero = QFrame(); hero.setObjectName("Hero")
@@ -92,24 +92,49 @@ class HomePage(QWidget):
         import_voice.clicked.connect(self.import_requested)
         status_layout.addWidget(install, 2, 0); status_layout.addWidget(import_voice, 2, 1)
         layout.addWidget(status)
+        overview = QGridLayout()
+        recent_panel = QFrame(); recent_panel.setObjectName("Panel"); recent_layout = QVBoxLayout(recent_panel)
+        recent_title = QLabel("最近生成"); recent_title.setObjectName("CardTitle"); self.recent = QLabel(); self.recent.setWordWrap(True)
+        recent_layout.addWidget(recent_title); recent_layout.addWidget(self.recent)
+        voice_panel = QFrame(); voice_panel.setObjectName("Panel"); voice_layout = QVBoxLayout(voice_panel)
+        voice_title = QLabel("推荐音色"); voice_title.setObjectName("CardTitle"); self.recommended = QLabel(); self.recommended.setWordWrap(True)
+        voice_layout.addWidget(voice_title); voice_layout.addWidget(self.recommended)
+        overview.addWidget(recent_panel, 0, 0); overview.addWidget(voice_panel, 0, 1)
+        layout.addLayout(overview)
         layout.addStretch()
+        self.refresh()
+
+    def refresh(self) -> None:
+        jobs = [job for job in self.database.list_jobs(20) if job.get("status") == "completed" and job.get("kind") in {"original", "lyric"}][:3]
+        self.recent.setText("\n".join(
+            f"{Path(str(job['input_path'])).name}  ·  {job['engine'].upper()}  ·  {str(job['created_at'])[:10]}"
+            for job in jobs
+        ) or "暂无已完成任务")
+        voices = self.registry.scan()[:3]
+        self.recommended.setText("\n".join(
+            f"{model.display_name}  ·  {model.engine.upper()}  ·  {'可试听' if model.preview else '待生成试听'}"
+            for model in voices
+        ) or "暂无已导入音色")
 
 
 class CoverPage(QWidget):
     start_requested = Signal(dict)
     import_requested = Signal()
 
-    def __init__(self, registry: ModelRegistry):
-        super().__init__(); self.registry = registry; self.selected_model: str | None = None
+    def __init__(self, registry: ModelRegistry, settings: Settings):
+        super().__init__(); self.registry = registry; self.settings = settings; self.selected_model: str | None = None
         page, layout = panel_layout("原词翻唱", "拖入歌曲，选择引擎和音色，然后生成。推理在独立工作进程运行。")
         QVBoxLayout(self).addWidget(page)
         self.drop = AudioDropArea(); layout.addWidget(self.drop)
+        self.input_player = AudioPlayer(); layout.addWidget(self.input_player)
+        self.drop.path_changed.connect(lambda value: self.input_player.set_source(Path(value)))
         controls = QFrame(); controls.setObjectName("Panel")
         form = QGridLayout(controls); form.setContentsMargins(18, 16, 18, 16)
         self.engine = QComboBox(); self.engine.addItems(["RVC", "DDSP"])
         self.voice = QComboBox(); self.pitch = pitch_selector()
         self.balance = QComboBox(); self.balance.addItems(["均衡", "人声更突出", "伴奏更突出"])
         self.output_format = QComboBox(); self.output_format.addItems(["WAV", "FLAC", "MP3"])
+        self.output_format.setCurrentText(settings.output_format.upper())
         form.addWidget(QLabel("引擎"), 0, 0); form.addWidget(self.engine, 0, 1)
         form.addWidget(QLabel("音色"), 0, 2); form.addWidget(self.voice, 0, 3)
         form.addWidget(QLabel("升降调"), 1, 0); form.addWidget(self.pitch, 1, 1)
@@ -132,17 +157,20 @@ class CoverPage(QWidget):
         pitch = int(selected_pitch) if selected_pitch is not None else int(model.recommended_pitch if model else 0)
         self.start_requested.emit({"input_path": str(self.drop.path), "engine": self.engine.currentText().lower(),
             "model_id": self.voice.currentData(), "options": {"pitch": pitch, "pitch_mode": "auto" if selected_pitch is None else "manual",
-            "balance": self.balance.currentText(), "output_format": self.output_format.currentText().lower()}})
+            "balance": self.balance.currentText(), "output_format": self.output_format.currentText().lower(),
+            "memory_profile": self.settings.memory_profile}})
 
 
 class LyricPage(QWidget):
     start_requested = Signal(dict)
     import_requested = Signal()
 
-    def __init__(self, registry: ModelRegistry, paths: AppPaths):
-        super().__init__(); self.registry = registry; self.paths = paths
+    def __init__(self, registry: ModelRegistry, paths: AppPaths, settings: Settings):
+        super().__init__(); self.registry = registry; self.paths = paths; self.settings = settings
         page, layout = panel_layout("改词翻唱 Beta", "Beta：复杂歌词可能出现咬字、节奏或旋律偏差；长音频建议导入带时间戳的 LRC。")
         QVBoxLayout(self).addWidget(page); self.drop = AudioDropArea(); layout.addWidget(self.drop)
+        self.input_player = AudioPlayer(); layout.addWidget(self.input_player)
+        self.drop.path_changed.connect(lambda value: self.input_player.set_source(Path(value)))
         fields = QFrame(); fields.setObjectName("Panel"); form = QFormLayout(fields); form.setContentsMargins(18, 16, 18, 16)
         self.original = QTextEdit(); self.original.setPlaceholderText("粘贴原歌词，或导入 TXT/LRC"); self.original.setMaximumHeight(92)
         self.new = QTextEdit(); self.new.setPlaceholderText("粘贴新歌词，建议逐行对应原歌词"); self.new.setMaximumHeight(92)
@@ -153,6 +181,7 @@ class LyricPage(QWidget):
         self.pitch = pitch_selector()
         self.balance = QComboBox(); self.balance.addItems(["均衡", "人声更突出", "伴奏更突出"])
         self.output_format = QComboBox(); self.output_format.addItems(["WAV", "FLAC", "MP3"])
+        self.output_format.setCurrentText(settings.output_format.upper())
         for column, (label, widget) in enumerate((("引擎", self.engine), ("音色", self.voice), ("适配", self.strategy))):
             grid.addWidget(QLabel(label), 0, column * 2); grid.addWidget(widget, 0, column * 2 + 1)
         for column, (label, widget) in enumerate((("升降调", self.pitch), ("混音", self.balance), ("输出", self.output_format))):
@@ -214,7 +243,7 @@ class LyricPage(QWidget):
             "input_path": str(self.drop.path), "engine": self.engine.currentText().lower(), "model_id": self.voice.currentData(),
             "options": {"original_lyrics": self.original.toPlainText(), "new_lyrics": self.new.toPlainText(),
             "strategy": self.strategy.currentText(), "pitch": pitch, "pitch_mode": "auto" if selected_pitch is None else "manual", "balance": self.balance.currentText(),
-            "output_format": self.output_format.currentText().lower()},
+            "output_format": self.output_format.currentText().lower(), "memory_profile": self.settings.memory_profile},
         })
 
 
@@ -277,8 +306,9 @@ class EditVoiceDialog(QDialog):
         self.directory = model.directory(importer.weights_root); form = QFormLayout(self)
         self.name = QLineEdit(model.display_name); self.description = QLineEdit(model.description); self.pitch = QSpinBox(); self.pitch.setRange(-12, 12); self.pitch.setValue(model.recommended_pitch)
         self.languages = QLineEdit(", ".join(model.languages)); self.avatar = QLineEdit(); self.preview = QLineEdit(); self.remove_preview = QCheckBox("删除现有试听并自动重新生成")
+        self.featured = QCheckBox("置顶此音色"); self.featured.setChecked(model.featured)
         form.addRow("名称", self.name); form.addRow("简介", self.description); form.addRow("推荐升降调", self.pitch); form.addRow("适合语言", self.languages)
-        form.addRow("更换头像", self._picker(self.avatar, "图片 (*.png *.jpg *.jpeg *.webp)")); form.addRow("更换试听", self._picker(self.preview, "音频 (*.wav *.flac *.mp3 *.m4a)")); form.addRow("", self.remove_preview)
+        form.addRow("更换头像", self._picker(self.avatar, "图片 (*.png *.jpg *.jpeg *.webp)")); form.addRow("更换试听", self._picker(self.preview, "音频 (*.wav *.flac *.mp3 *.m4a)")); form.addRow("", self.remove_preview); form.addRow("", self.featured)
         tools = QWidget(); row = QHBoxLayout(tools); row.setContentsMargins(0, 0, 0, 0); open_dir = QPushButton("打开模型目录"); delete = QPushButton("删除用户模型"); delete.setEnabled(not model.bundled)
         open_dir.clicked.connect(lambda: QDesktopServices.openUrl(self.directory.as_uri())); delete.clicked.connect(self._delete); row.addWidget(open_dir); row.addWidget(delete); row.addStretch(); form.addRow("", tools)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Save); buttons.button(QDialogButtonBox.StandardButton.Save).setText("保存")
@@ -299,7 +329,7 @@ class EditVoiceDialog(QDialog):
                 languages=[item for item in self.languages.text().replace("，", ",").split(",")],
                 avatar=Path(self.avatar.text()) if self.avatar.text().strip() else None,
                 preview=Path(self.preview.text()) if self.preview.text().strip() else None,
-                remove_preview=self.remove_preview.isChecked(),
+                remove_preview=self.remove_preview.isChecked(), featured=self.featured.isChecked(),
             )
         except Exception as exc:
             QMessageBox.critical(self, "保存失败", str(exc)); return
@@ -323,17 +353,32 @@ class VoiceManagerPage(QWidget):
     generate_requested = Signal(str)
     model_selected = Signal(str, str)
     edit_requested = Signal(str)
-    def __init__(self, registry: ModelRegistry):
-        super().__init__(); self.registry = registry; page, layout = panel_layout("音色管理", "音色按 RVC / DDSP 分开显示；元数据与权重文件分离保存。")
+    def __init__(self, registry: ModelRegistry, database: Database):
+        super().__init__(); self.registry = registry; self.database = database; page, layout = panel_layout("音色管理", "音色按 RVC / DDSP 分开显示；元数据与权重文件分离保存。")
         QVBoxLayout(self).addWidget(page); tools = QHBoxLayout(); self.engine = QComboBox(); self.engine.addItems(["RVC", "DDSP"])
-        self.search = QLineEdit(); self.search.setPlaceholderText("搜索音色"); add = QPushButton("导入音色"); add.setObjectName("Primary")
-        tools.addWidget(self.engine); tools.addWidget(self.search, 1); tools.addWidget(add); layout.addLayout(tools)
+        self.search = QLineEdit(); self.search.setPlaceholderText("搜索名称、简介或语言")
+        self.sort = QComboBox(); self.sort.addItems(["推荐优先", "名称排序", "最近使用"])
+        self.hide_bundled = QCheckBox("隐藏内置")
+        add = QPushButton("导入音色"); add.setObjectName("Primary")
+        tools.addWidget(self.engine); tools.addWidget(self.search, 1); tools.addWidget(self.sort); tools.addWidget(self.hide_bundled); tools.addWidget(add); layout.addLayout(tools)
         self.scroll = QScrollArea(); self.scroll.setWidgetResizable(True); layout.addWidget(self.scroll, 1)
         self.player = AudioPlayer(); layout.addWidget(self.player)
-        self.engine.currentTextChanged.connect(self.refresh); self.search.textChanged.connect(self.refresh); add.clicked.connect(self.import_requested); self.refresh()
+        self.engine.currentTextChanged.connect(self.refresh); self.search.textChanged.connect(self.refresh); self.sort.currentTextChanged.connect(self.refresh); self.hide_bundled.toggled.connect(self.refresh); add.clicked.connect(self.import_requested); self.refresh()
     def refresh(self) -> None:
         host = QWidget(); column = QVBoxLayout(host); needle = self.search.text().casefold()
-        models = [m for m in self.registry.scan(self.engine.currentText().lower()) if needle in m.display_name.casefold()]
+        models = [
+            model for model in self.registry.scan(self.engine.currentText().lower())
+            if needle in " ".join((model.display_name, model.description, *model.languages)).casefold()
+            and not (self.hide_bundled.isChecked() and model.bundled)
+        ]
+        if self.sort.currentText() == "名称排序":
+            models.sort(key=lambda model: model.display_name.casefold())
+        elif self.sort.currentText() == "最近使用":
+            recent = [str(job["model_id"]) for job in self.database.list_jobs(100) if job.get("kind") in {"original", "lyric", "preview"}]
+            order: dict[str, int] = {}
+            for model_id in recent:
+                order.setdefault(model_id, len(order))
+            models.sort(key=lambda model: (order.get(model.id, len(recent)), model.display_name.casefold()))
         if not models:
             if not needle or "丰川祥子" in needle or "祥子" in needle:
                 pending = QFrame(); pending.setObjectName("Panel"); row = QHBoxLayout(pending)
@@ -593,11 +638,20 @@ class ComponentPage(QWidget):
 
 
 class SettingsPage(QWidget):
-    def __init__(self, settings: Settings, hardware: HardwareInfo):
+    def __init__(self, settings: Settings, hardware: HardwareInfo, settings_path: Path):
         super().__init__(); page, layout = panel_layout("设置", "硬件信息来自本机检测，CUDA 版本是驱动报告值，不代表 PyTorch 运行时已安装。")
         QVBoxLayout(self).addWidget(page); frame = QFrame(); frame.setObjectName("Panel"); form = QFormLayout(frame); form.setContentsMargins(18, 16, 18, 16)
-        profile = QComboBox(); profile.addItems(["极低", "低", "标准", "高质量"]); profile.setCurrentText(settings.memory_profile)
-        form.addRow("显存模式", profile); form.addRow("GPU", QLabel(hardware.gpu or "未检测到")); form.addRow("显存", QLabel(f"{hardware.vram_gb or '?'} GB")); form.addRow("Compute Capability", QLabel(hardware.compute_capability or "未知")); form.addRow("驱动", QLabel(hardware.driver or "未知")); form.addRow("CUDA（驱动）", QLabel(hardware.cuda_reported or "未知")); form.addRow("CUDA 实测", QLabel("通过" if hardware.cuda_smoke else "未通过或未安装运行时")); form.addRow("FP16 实测", QLabel("通过" if hardware.fp16_supported else "未验证")); form.addRow("磁盘可用", QLabel(f"{hardware.disk_free_gb} GB" if hardware.disk_free_gb is not None else "未知")); form.addRow("FFmpeg", QLabel(hardware.ffmpeg or "未安装")); form.addRow("版本", QLabel(__version__)); layout.addWidget(frame); layout.addStretch()
+        self.profile = QComboBox(); self.profile.addItems(["极低", "低", "标准", "高质量"]); self.profile.setCurrentText(settings.memory_profile)
+        self.output_format = QComboBox(); self.output_format.addItems(["WAV", "FLAC", "MP3"]); self.output_format.setCurrentText(settings.output_format.upper())
+        self.minimize = QCheckBox("无任务时关闭窗口也最小化到托盘"); self.minimize.setChecked(settings.minimize_to_tray)
+        form.addRow("显存模式", self.profile); form.addRow("下次启动默认输出", self.output_format); form.addRow("关闭行为", self.minimize)
+        form.addRow("GPU", QLabel(hardware.gpu or "未检测到")); form.addRow("显存", QLabel(f"{hardware.vram_gb or '?'} GB")); form.addRow("Compute Capability", QLabel(hardware.compute_capability or "未知")); form.addRow("驱动", QLabel(hardware.driver or "未知")); form.addRow("CUDA（驱动）", QLabel(hardware.cuda_reported or "未知")); form.addRow("CUDA 实测", QLabel("通过" if hardware.cuda_smoke else "未通过或未安装运行时")); form.addRow("FP16 实测", QLabel("通过" if hardware.fp16_supported else "未验证")); form.addRow("磁盘可用", QLabel(f"{hardware.disk_free_gb} GB" if hardware.disk_free_gb is not None else "未知")); form.addRow("FFmpeg", QLabel(hardware.ffmpeg or "未安装")); form.addRow("版本", QLabel(__version__)); layout.addWidget(frame); layout.addStretch()
+        def persist() -> None:
+            settings.memory_profile = self.profile.currentText()  # type: ignore[assignment]
+            settings.output_format = self.output_format.currentText().lower()  # type: ignore[assignment]
+            settings.minimize_to_tray = self.minimize.isChecked()
+            settings.save(settings_path)
+        self.profile.currentTextChanged.connect(persist); self.output_format.currentTextChanged.connect(persist); self.minimize.toggled.connect(persist)
 
 
 class MainWindow(QMainWindow):
@@ -628,14 +682,14 @@ class MainWindow(QMainWindow):
         )
 
     def _add_pages(self) -> None:
-        home = HomePage(self.hardware, self.paths); cover = CoverPage(self.registry); lyric = LyricPage(self.registry, self.paths); voices = VoiceManagerPage(self.registry); history = HistoryPage(self.database, self.paths, self.registry)
+        home = HomePage(self.hardware, self.paths, self.database, self.registry); cover = CoverPage(self.registry, self.app_settings); lyric = LyricPage(self.registry, self.paths, self.app_settings); voices = VoiceManagerPage(self.registry, self.database); history = HistoryPage(self.database, self.paths, self.registry)
         home.navigate.connect(self.navigate); home.import_requested.connect(self.import_voice); cover.import_requested.connect(self.import_voice); cover.start_requested.connect(self.start_job); voices.import_requested.connect(self.import_voice)
         lyric.import_requested.connect(self.import_voice); lyric.start_requested.connect(self.start_lyric_job)
         voices.generate_requested.connect(self.start_preview_job); voices.model_selected.connect(self.select_model)
         voices.edit_requested.connect(self.edit_voice)
         history.cancel_requested.connect(self.jobs.cancel); history.rerun_requested.connect(self.rerun_job); self.jobs.event.connect(lambda job_id, event: history.refresh())
         self.jobs.finished.connect(self._job_finished)
-        pages = {"首页": home, "原词翻唱": cover, "改词翻唱 Beta": lyric, "音色管理": voices, "任务记录": history, "组件管理": ComponentPage(self.paths, self.jobs, self.database), "设置": SettingsPage(self.app_settings, self.hardware)}
+        pages = {"首页": home, "原词翻唱": cover, "改词翻唱 Beta": lyric, "音色管理": voices, "任务记录": history, "组件管理": ComponentPage(self.paths, self.jobs, self.database), "设置": SettingsPage(self.app_settings, self.hardware, self.paths.workspace / "settings.json")}
         for name, page in pages.items(): self.pages[name] = page; self.stack.addWidget(page)
 
     def navigate(self, name: str) -> None:
@@ -658,6 +712,8 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _models_changed(self) -> None:
+        home = self.pages["首页"]
+        if isinstance(home, HomePage): home.refresh()
         page = self.pages["原词翻唱"]
         if isinstance(page, CoverPage): page.refresh_models()
         lyric = self.pages["改词翻唱 Beta"]
@@ -763,4 +819,6 @@ class MainWindow(QMainWindow):
             if clicked is back: event.ignore(); return
             if clicked is cancel:
                 for job_id in list(self.jobs.processes): self.jobs.cancel(job_id)
+        elif self.app_settings.minimize_to_tray:
+            self.hide(); self.tray.showMessage("OpenCover Studio", "软件仍在系统托盘运行。可从托盘菜单退出。", QSystemTrayIcon.MessageIcon.Information, 3000); event.ignore(); return
         event.accept()

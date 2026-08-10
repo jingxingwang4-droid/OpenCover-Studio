@@ -28,6 +28,7 @@ def main(request_file: str) -> int:
             strategy=str(options.get("strategy", "均衡")), pitch=int(options.get("pitch", 0)),
             balance=str(options.get("balance", "均衡")), output_format=str(options.get("output_format", "wav")),
             generator=str(options.get("generator", "auto")),
+            memory_profile=str(options.get("memory_profile", "标准")),
         )
         emit("status", message="正在检查改词组件")
         pipeline = LyricCoverPipeline(root)

@@ -422,6 +422,28 @@ resources:
     status: installed_weights_only_and_inference_tested_local_only
     notes: Hugging Face LFS size matched; weights_only=True succeeded with only state_dict; loaded in real synthesis. Upstream docs state the universal vocoder used about 70 hours of singing data, so no redistribution is inferred.
 
+  - resource_id: yingmusic_singer_plus_candidate
+    type: research_candidate
+    name: YingMusic-Singer-Plus annotation-free lyric editing backend
+    author: ASLP@NPU / GiantNetwork AI Lab
+    official_repository: https://github.com/ASLP-lab/YingMusic-Singer-Plus
+    source_page: https://huggingface.co/ASLP-lab/YingMusic-Singer-Plus
+    download_url: https://huggingface.co/ASLP-lab/YingMusic-Singer-Plus
+    download_method: git_lfs
+    version: main / 2026-08-10 research snapshot
+    tag: ""
+    commit: baa409c2e7e5e775f09b4e92a220808f4827d2cc
+    model_revision: 9b3f444f2bccd77fbc03e32eb7c334fc96040b8d
+    file_size: 13052111592
+    sha256: ""
+    license: CC BY 4.0 code/main weights; Stable Audio VAE uses Stability AI Community License
+    redistribution_allowed: false
+    install_directory: external_backends/yingmusic_singer_plus
+    backend: lyric_editing_candidate
+    last_verified: "2026-08-10"
+    status: researched_not_installed_official_windows_bundle_unavailable
+    notes: 官方支持中文/英文、音频旋律输入和无需音素级人工对齐；5 个主要 checkpoint 合计 13,052,111,592 bytes。官方 Windows 预构建仍为 Coming soon，示例批处理使用 4/8 GPU，且 VAE 有单独社区许可；当前只记录候选，不在 GUI 中宣称可用或提供一键安装。
+
   - resource_id: toyokawa_sakiko_rvc
     type: voice_model
     name: 丰川祥子 RVC

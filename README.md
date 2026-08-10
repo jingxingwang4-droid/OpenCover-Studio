@@ -2,6 +2,8 @@
 
 OpenCover Studio 是面向 Windows 普通用户的本地歌曲翻唱桌面应用。当前仓库是 **v0.1.0 阶段性可运行版本**：桌面 GUI、模型导入/编辑、独立任务、SQLite、安全下载、音频标准化/分离/转换/混音与真实试听均已实现；MSST + RVC 和 MSST + DDSP 都在本机对 `assets/audio/春日影.wav` 完成了真实 CUDA 全曲推理。
 
+首页会从 SQLite 显示最近完成任务，并从本地模型注册表显示推荐音色；原词和改词页都能在提交前播放输入歌曲。音色管理支持名称/简介/语言搜索、推荐优先/名称/最近使用排序、置顶与隐藏内置。设置页会即时保存显存模式、下次启动默认格式和托盘关闭行为。
+
 “改词翻唱 Beta”现已接入 GUI 和 JobManager：支持粘贴或导入 UTF-8/GBK/Shift-JIS 的 TXT/LRC，执行 MSST → LRC/逐行短句规划 → Vevo2 → 时长拼接 → RVC/DDSP → 混音。Vevo2 不可用或推理失败时，会自动切换到 GAME 提取旋律 → 中文字符映射 → 原版 DiffSinger OpenCpop 模型合成 → RVC/DDSP。主路径和回退路径都已生成真实、非静音 WAV。无时间戳的长歌曲仍会要求用户提供 LRC；DiffSinger 回退当前只支持含中文汉字的歌词，且其旧版权重许可不明确，只进入本机完整包，不进入公开发行包。
 
 ## 本地开发运行
@@ -27,7 +29,7 @@ python -m venv .venv
 5. 改词页优先使用带时间戳 LRC。每句被限制在约 3～15 秒范围，新歌词密度超出所选“保守/均衡/强制”策略时会明确拒绝。
 6. “任务记录”可直接重新生成，或为原词/改词/试听任务更换同引擎音色后再生成；播放器提供独立音量滑块。
 
-RVC/DDSP 转换若捕获到明确的 CUDA OOM，会等待失败的后端子进程退出并释放 CUDA 上下文，再依次以 30 秒、15 秒分段重试；次数有限，仍失败时任务记录显示 `CUDA_OOM`，不会无限循环。Vevo2 主路径失败时自动切换 GAME + DiffSinger。实体低显存显卡上的 OOM/Legacy 兼容性仍需独立验收。
+RVC/DDSP 转换若捕获到明确的 CUDA OOM，会等待失败的后端子进程退出并释放 CUDA 上下文，再按显存模式使用 8～45 秒分段有限重试；次数有限，仍失败时任务记录显示 `CUDA_OOM`，不会无限循环。“极低/低”模式还会把 Vevo2 flow steps 从标准 32 降到 16/24。Vevo2 主路径失败时自动切换 GAME + DiffSinger。实体低显存显卡上的 OOM/Legacy 兼容性仍需独立验收。
 
 `assets/preview_sources/neutral_melody.wav` 来自 owstu 在 Freesound 发布的 CC0 清唱素材，9.008 秒。当前本机另安装并验证了 TogetsuDo 的丰川祥子 RVC/DDSP 社区模型；它们均为非官方且没有明确再分发许可，因此被 `.gitignore` 排除，也不会打入公开发行包。资源真实状态详见 `config/resource_manifest.yaml` 与 `docs/RESOURCE_RESEARCH.md`。
 

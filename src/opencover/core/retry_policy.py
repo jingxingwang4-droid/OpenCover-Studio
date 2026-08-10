@@ -14,6 +14,14 @@ OOM_MARKERS = (
     "cublas_status_alloc_failed", "hip out of memory", "显存不足", "内存分配失败",
 )
 
+PROFILE_CHUNKS: dict[str, tuple[float, ...]] = {
+    "极低": (15.0, 8.0), "低": (20.0, 10.0), "标准": (30.0, 15.0), "高质量": (45.0, 20.0),
+}
+
+
+def chunk_sizes_for_profile(profile: str) -> tuple[float, ...]:
+    return PROFILE_CHUNKS.get(profile, PROFILE_CHUNKS["标准"])
+
 
 def is_cuda_oom(error: BaseException | str) -> bool:
     message = str(error).casefold()
