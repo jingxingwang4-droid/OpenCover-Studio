@@ -54,11 +54,12 @@ def test_edit_metadata_remove_preview_and_delete_user_model(tmp_path: Path) -> N
     importer = ModelImporter(tmp_path / "weights")
     model = importer.import_model(engine="rvc", weight=weight, display_name="旧名称", preview=preview)
     changed = importer.update_model(
-        model.id, display_name="新名称", description="新简介", recommended_pitch=3,
+        model.id, display_name="新名称", description="新简介", recommended_pitch=3, voice_gender="female",
         languages=["zh", "ja"], remove_preview=True, featured=True,
     )
     assert changed.display_name == "新名称"
     assert changed.recommended_pitch == 3
+    assert changed.voice_gender == "female"
     assert changed.preview is None
     assert changed.featured is True
     assert not list(changed.directory(tmp_path / "weights").glob("preview*"))

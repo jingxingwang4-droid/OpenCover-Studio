@@ -4,11 +4,10 @@
 
 - FFmpeg 官方 Windows 下载导航：https://ffmpeg.org/download.html#build-windows
 - MSST：https://github.com/ZFTurbo/Music-Source-Separation-Training
+- Ultimate Vocal Remover GUI：https://github.com/Anjok07/ultimatevocalremovergui （本机固定 commit `5517e0c...`）
+- UVR5 无界面运行器 audio-separator：https://github.com/nomadkaraoke/python-audio-separator （本机版本 `0.44.5`）
 - RVC CLI：https://github.com/RVC-Project/Retrieval-based-Voice-Conversion
 - RVC 官方基础模型/演示权重：https://huggingface.co/lj1995/VoiceConversionWebUI
-- Saisho Utane 自有声音 RVC（CC BY 4.0）：https://huggingface.co/Saisho-Utane/Saisho-Model-RVC
-- VCTK p231/p226 RVC（模型仓库 Apache-2.0）：https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample
-- CSTR VCTK 语料与原始许可：https://datashare.ed.ac.uk/handle/10283/3443
 - DDSP-SVC：https://github.com/yxlllc/DDSP-SVC
 - DDSP ContentVec：https://huggingface.co/lengyue233/content-vec-best
 - DDSP RMVPE：https://github.com/yxlllc/RMVPE/releases/tag/230917
@@ -31,4 +30,6 @@
 - YingMusic-Singer-Plus 官方权重：https://huggingface.co/ASLP-lab/YingMusic-Singer-Plus
 - 公共领域分离测试音频：https://commons.wikimedia.org/wiki/File:Irene_Dunne_singing_in_Love_Affair.ogg
 
-祥子双模型的模型卡均声明其为非官方社区模型，且没有给出角色权利、训练数据授权或再分发许可；因此只在本机按用户要求下载并测试，绝不进入 Git 或公开发行包。未填写的下载地址、哈希、作者或许可表示尚未核验，而不是“任意镜像均可”。
+未填写的下载地址、哈希、作者或许可表示尚未核验，而不是“任意镜像均可”。
+
+UVR5 本机链使用 `UVR-MDX-NET-Voc_FT.onnx` 分离总人声/伴奏，再用 `5_HP-Karaoke-UVR.pth` 拆分主唱与和声，最后用 `dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt` 对主唱强去混响。模型权重保留在被 Git 忽略的 `external_backends/uvr5/models_runtime/`，不进入公开发行包；真实测试、大小与 SHA256 记录在同目录 `backend.json`。

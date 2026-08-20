@@ -1,0 +1,57 @@
+# Model-specific inference tuning. These values affect generated audio and are
+# included in the conversion cache identity by VoiceModel.inference_signature().
+toyokawa_sakiko_rvc:
+  voice_gender: female
+  f0_method: rmvpe
+  # This model's large FAISS index destabilizes high and sustained notes.
+  index_rate: 0.0
+  # Five real VISinger2 source singers and three protection levels were
+  # compared after conversion. 0.50 retained the most Mandarin consonants.
+  protect: 0.50
+  rms_mix_rate: 0.25
+  source_detail_mix: 0.18
+  source_detail_cutoff_hz: 4200
+  converted_gain: 0.96
+
+rvc_official_demo_voice:
+  voice_gender: female
+  f0_method: rmvpe
+  # This bundled demo voice has no FAISS index. Explicitly disable retrieval so
+  # inference does not pretend an index-assisted conversion is available.
+  index_rate: 0.0
+  # Preserve unvoiced consonants from the generated Mandarin vocal. This source
+  # is DiffSinger output, not the original singer, so it cannot leak the original
+  # vocal identity back into the mix.
+  protect: 0.50
+  rms_mix_rate: 0.25
+  source_detail_mix: 0.28
+  source_detail_cutoff_hz: 3600
+  converted_gain: 0.96
+
+toyokawa_sakiko_ddsp:
+  selectable: false
+  quality_status: rejected
+  featured: false
+  sort_order: 999
+  voice_gender: female
+  f0_method: rmvpe
+  f0_min: 65
+  f0_max: 800
+  # Keep very quiet syllable tails available to the model. Real 《惊鹊》
+  # validation found no literal missing frames, so this is a conservative guard.
+  silence_threshold_db: -80
+  source_detail_mix: 0.35
+  source_detail_cutoff_hz: 2400
+  converted_treble_db: 1
+  converted_gain: 0.90
+
+kokkoro_ddsp_community:
+  voice_gender: female
+  f0_method: rmvpe
+  f0_min: 65
+  f0_max: 800
+  silence_threshold_db: -60
+  source_detail_mix: 0.42
+  source_detail_cutoff_hz: 2200
+  converted_treble_db: 1
+  converted_gain: 0.88

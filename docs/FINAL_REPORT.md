@@ -1,5 +1,7 @@
 # OpenCover Studio v0.1.0 阶段交付报告
 
+> 2026-08-17 当前状态：DDSP/RVC 本机后端保持 runnable；当前 2 个 RVC 和 3 个 DDSP 音色已分别用《惊鹊》第一句干声真实重建试听，UI 背景蒙层与内容面板透明度也已调整并截图复验。下方编号清单保留阶段历史证据，旧发行包大小和旧音色数量不代表当前工作区。
+
 1. GUI：七个简体中文 Qt Widgets 页面、左侧导航、背景蒙层、音频拖放、输入/音色/输出播放器及音量、托盘、窗口/页面记忆；首页显示真实最近任务与推荐音色，历史任务可重新生成或更换同引擎音色后生成。
 2. 启动：双击 `app.py` 自动转交 `pythonw.exe`；Modern/Legacy EXE 均为 windowed onedir，不显示控制台、不打开浏览器。
 3. 后端：MSST `e247dfe...`、RVC `7b284a6...`、DDSP-SVC `2e2ac5d...` 均在各自独立环境通过真实 CUDA 推理。
@@ -7,7 +9,7 @@
 5. 祥子 RVC：TogetsuDo revision `61676cf...`，weight/index 均记录 SHA256；30 秒 indexed 与全曲 worker 成功。
 6. 祥子 DDSP：TogetsuDo revision `4b77b1a...`，weight/config 均记录 SHA256；30 秒与全曲 worker 成功。
 7. 权利边界：两套祥子权重都是未经官方授权的社区模型、license `Other`，只在本机按用户要求安装测试，不随 Git 或公开发行包分发；头像仅使用用户提供图片。
-8. 标准试听：owstu/Freesound “Female Vocal 01.wav”，CC0，转换后 9.008 秒；目标 RVC/DDSP 均由此干声实际推理生成独立 `preview.wav`。
+8. 试听源：本机优先使用《惊鹊》第一句 5.520 秒分离干声，当前 5 个音色均由各自目标 RVC/DDSP 真实推理生成独立 `preview.wav`；该歌曲片段不进入 Git/公开包，公开回退源仍是 owstu/Freesound 9.008 秒 CC0 素材。
 9. 自动试听：导入时可选自动/上传/暂不生成；独立 worker 有进度、可取消、失败写 SQLite；WAV/FLAC/MP3/M4A 上传会保留原始文件并统一转码。
 10. 原词链路：标准化 → MSST → RVC/DDSP → 对齐 → LUFS/峰值混音 → WAV/FLAC/MP3；两引擎都完成《春日影》257.84 秒全曲真实输出。
 11. 缓存：分离、改词生成、音色转换和最终混音分层；换混音/格式不重复模型推理，模型哈希变化会使转换缓存失效。

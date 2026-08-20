@@ -1,41 +1,22 @@
 # 更新日志
 
-## 0.1.0 - 2026-08-09
+## 未发布
 
-- 创建 PySide6 Qt Widgets 桌面壳、七个中文页面和系统托盘。
-- 添加 RVC/DDSP 模型注册、哈希去重、安全导入、头像与真实试听管理。
-- 添加 SQLite 任务历史、QProcess worker、JSON Lines 协议与取消能力。
-- 添加组件/硬件探测、安全下载/解压、FFmpeg 音频标准化与响度混音模块。
-- 添加资源研究、许可证边界、Modern/Legacy 构建脚本和测试。
-- 修复双击 `app.py` 时系统 Python 找不到 PySide6/项目源码而静默退出的问题，自动切换项目 `pythonw.exe`。
-- 固定并安装 MSST、RVC、DDSP 源码；MSST MDX23C 和 RVC 在 RTX 5070 Ti 上对《春日影》完成真实 CUDA smoke test。
-- 移除 worker 的阶段性硬停止，接通 GUI 原词翻唱全链路、进度事件、WAV/FLAC/MP3 导出与结果缓存。
-- 安装 DDSP-SVC 6.3 独立运行时及 ContentVec、RMVPE、PC-NSF-HiFiGAN，完成 30 秒与《春日影》全曲真实 CUDA 推理。
-- 安装并安全扫描非官方祥子 RVC/DDSP 社区模型；完成两条全曲 worker 输出、带 index RVC 中文路径兼容和共享分离阶段缓存。
-- 加入 CC0 的 9.008 秒真实清唱标准干声；目标 RVC/DDSP 均真实生成试听，音色卡可播放，用户导入无试听时会启动独立后台任务。
-- 修复 JobManager 根路径参数、DDSP 输出目录和 RVC/FAISS 中文路径问题；pytest 增至 15 项全通过。
-- 改词扩展仍保持未验证状态，非官方角色权重仍禁止进入公开发行包。
-- 固定并安装 Amphion Vevo2 4.28 GB 推理权重，真实生成中文/日文 9.16 秒 WAV，峰值 CUDA 7.91 GB。
-- 固定 GAME 源码与 v1.0 small 模型，对《春日影》30 秒人声真实导出 MIDI/TXT/CSV；记录 DiffSinger 官方分支缺少歌声模型的阻塞状态。
-- 接通改词 GUI/JobManager：TXT/LRC 多编码解析、短句规划、三档歌词密度、Vevo2 批量生成、时长拼接、RVC/DDSP、混音和分层缓存。
-- 新增专用 `OpenCoverStudioWorker.exe`；Qt 隐藏启动仍保留 UTF-8 JSON Lines，修复 onefile TEMP 环境和中文路径乱码，实测 Vevo2 阶段取消无孤儿进程。
-- 音色导入新增自动/上传/暂不生成试听，上传支持 WAV/FLAC/MP3/M4A；音色卡增加管理入口，可改名称、简介、语言、Key、头像/试听并删除用户模型。
-- 修复 DDSP 用户配置必须命名 `config.yaml`、后端错误 GBK/UTF-8 解码、换混音误返旧缓存、模型哈希未进入转换缓存等问题。
-- 新增真实 CUDA/FP16、Compute Capability、RAM/磁盘检测；pytest 增至 24 项。
-- 组装并验证 22.76 GiB `Modern-LocalFull` 私有包；公开包继续排除不可再分发权重。
-- 组件管理页接入可取消的资源 worker：断点、重试、速度/进度、缓存、大小/SHA256、安全解压和拒绝覆盖；下载完成后仍以真实后端 smoke test 判定可用状态。
-- 固定原版官方 DiffSinger demo 与 OpenCpop/NSF-HiFiGAN 权重，接通 GAME 旋律提取、中文字符映射、批量 DiffSinger 合成及 Vevo2 失败自动回退；固定样例、动态旋律与完整祥子 RVC 混音均生成真实非静音 WAV。
-- 历史任务新增“重新生成”和“更换音色生成”，音频播放器新增音量滑块；改词页在仅 GAME + DiffSinger 就绪时也可启动。
-- RVC/DDSP 与试听转换新增 CUDA OOM 分类、失败子进程退出、30/15 秒分段有限重试和 `CUDA_OOM` 错误码；单元测试验证交叉淡化拼接，实体低显存硬件仍保守标为未验收。
-- pytest 增至 33 项，新增改词生成器、缺失可选 marker、GAME 音符映射、历史操作、音量控制和 OOM 降级覆盖。
-- 首页新增 SQLite 最近生成和本地推荐音色；原词/改词页新增输入播放器；音色管理补齐名称/简介/语言搜索、置顶、隐藏内置、名称及最近使用排序。
-- 设置页即时保存显存模式、默认输出和托盘关闭行为；显存档位进入任务与缓存键，并实际调节 Vevo2 steps 和 OOM 分段长度。“低”档 GAME→DiffSinger→祥子 RVC 再次真实通过。
-- 混音响度调整改用显式 dB 增益并在末端统一限峰，避免 pyloudnorm 在最终防削波前向 worker stderr 发出误导性削波警告。
-- 复核 YingMusic-Singer-Plus 与 WhisperX；前者登记为无需精细对齐的未来候选，因 13.05 GB checkpoint、Windows 预构建缺失和 VAE 独立许可暂不安装。
-- 任务系统新增逐任务 `worker.log`、异常退出记录恢复、ZIP 日志包导出、托盘实时进度和历史音色头像；pytest 增至 34 项。
-- 关闭并行 GPU 重载后，用全新歌词完成冻结 Vevo2→丰川祥子 RVC→混音未缓存重试，67.4 秒产生真实非静音 WAV。
-- 新增隔离的 Stable-ts 2.19.1 + OpenAI Whisper 20250625/base 歌词强制对齐组件；无时间戳原歌词现自动对齐到 MSST 人声并独立缓存，行数/正时长/递增校验失败时要求 LRC。
-- 官方 JFK 22 词、真实《春日影》日语歌声四行、源码与冻结 GAME→DiffSinger→祥子 RVC 完整链均通过；pytest 增至 37 项。
-- 新增三套许可与训练来源可核验的公开 RVC 初始音色：Saisho Utane（作者自有声音/CC BY 4.0）、VCTK p231 女声与 p226 男声（模型仓库 Apache-2.0、语料 CC BY 4.0）；固定 revision、大小和 LFS SHA256，checkpoint 安全加载与三份真实试听均通过。
-- 新增可复现的内置音色安装器；公开构建使用严格 ID 白名单并复核模型/头像/试听哈希，防止祥子等本机受限模型通过通配复制进入 Modern/Legacy 包。
-- Modern/Legacy 公开包重建为 804.2 MiB/482 文件，三套白名单音色逐文件复核通过；两套冻结 GUI 启动与 Worker 缺参协议 smoke 均通过，pytest 增至 38 项。
+- 修复改词翻唱把 UVR 错分出的原唱复制轨当作伴奏重新混回成品：新增清唱/弱伴奏残留检测、拒绝混入和缓存失效。
+- 根据真实《惊鹊》首句吐字复验，将自动主后端切换为逐字对齐 + GAME/连续 F0 + legacy OpenCpop DiffSinger；VISinger2 改为按谱后备，Vevo2 只保留显式路径。
+- RVC 改为一次加载音色模型、逐个生成短句转换后再校时拼接，避免带大段静音的整轨变声把“青州渡过江南”破坏成含混发音。
+- 修复 Vevo2 固定 500 个 AR token 导致 5 秒短句可能生成约 30 秒音频的问题，按 12.5 Hz 内容码和目标时长限制生成预算。
+- 删除会随时长比例改变音高的线性重采样拼接，改用 FFmpeg Rubber Band 保音高/保共振峰校时；超过 20% 变慢或 25% 变快时拒绝输出失真结果。
+- GAME/MIDI → DiffSinger 映射现在保留 SP/AP 休止、原音符时值和倚音/连音，不再把休止平均摊成长音。
+- 降低全页浅色蒙层不透明度，让用户的固定背景 1 更清晰可见。
+- 本机优先用《惊鹊》第一句干声生成音色试听，已为当前 2 个 RVC 和 3 个 DDSP 音色逐一真实重建；公开包仍只携带 CC0 回退源。
+
+## 0.1.0 - 2026-08-11
+
+- 提供 PySide6 桌面界面、原词翻唱与改词翻唱流程。
+- 使用 MSST/UVR5 分离人声、RVC/DDSP 转换音色，并支持 WAV/FLAC/MP3 导出。
+- 支持 RVC 与 DDSP 模型导入、索引/配置、头像、试听、元数据管理与安全哈希检查。
+- 使用独立 worker、SQLite 任务记录、进度事件、取消、缓存和 CUDA OOM 分段重试。
+- 改词流程支持歌词导入与对齐、Vevo2 主路径及 GAME + DiffSinger 回退路径。
+- 组件管理支持安全下载、校验、解压和真实可用状态检测。
+- RVC 当前仅保留白菜 357k 与丰川祥子两套本机音色；DDSP 功能、隔离环境、固定资源与原有社区音色已恢复，公开构建不打包受限音色权重。

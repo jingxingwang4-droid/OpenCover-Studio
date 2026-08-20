@@ -1,20 +1,20 @@
 # 第三方声明
 
-Git 源码提交包含原创 MIT 代码、用户提供的四张图片与资源元数据；用户歌曲、`.venv`、下载缓存、第三方源码、运行环境、FFmpeg 解压目录和模型权重由 `.gitignore` 排除，不进入源码提交。公开发行包仅额外加入构建脚本固定白名单内、逐文件核验许可与 SHA256 的三套 RVC 权重；其他 MSST/RVC/DDSP 模型是否可再分发仍须按清单逐项判断。
+Git 源码提交包含原创 MIT 代码、用户提供的图片与资源元数据；用户歌曲、`.venv`、下载缓存、第三方源码、运行环境、FFmpeg 解压目录和模型权重由 `.gitignore` 排除，不进入源码提交。白菜与祥子 RVC 权重只在本机使用，不进入公开发行包。
 
 - PySide6 / Qt for Python：LGPLv3/GPLv3 或 Qt 商业许可，详见 Qt 官方许可页面。
 - FFmpeg：实际许可取决于构建选项；清单候选 Windows build 标注为 GPL，发布时必须随包附带对应许可与源代码获取方式。
 - Music-Source-Separation-Training：MIT（须以锁定提交的 LICENSE 为准）。
+- Ultimate Vocal Remover GUI 与 audio-separator：代码均为 MIT；UVR 模型权重作者和再分发条款需分别核验。当前使用的 `Voc_FT`、`5_HP-Karaoke-UVR` 与 anvuew MelBand 去混响权重只作本机推理，排除在 Git 和公开发行包之外；anvuew 模型仓库标注 GPL-3.0。
 - Retrieval-based-Voice-Conversion：MIT（须以锁定提交的 LICENSE 为准）。
-- `Saisho-Utane/Saisho-Model-RVC`：CC BY 4.0；模型卡说明由作者自有声音训练。署名：`Voice model created by Saisho Utane — https://huggingface.co/Saisho-Utane — Used under the CC BY 4.0 license.`
-- `Nekochu/RVC-VCTK_Voice-sample` 的 p231/p226 RVC checkpoint：仓库模型卡声明 Apache-2.0；明确训练自 CSTR VCTK。VCTK Corpus 由 Christophe Veaux、Junichi Yamagishi、Kirsten MacDonald 创建，原始语料按 CC BY 4.0/其随附 attribution notice 提供。公开包使用项目自制占位头像，不复制模型仓库图片。
-- 三套内置 RVC 的 `preview.wav`：使用下述 CC0 标准干声经过对应 checkpoint 真实推理生成；每份输出哈希互异且不等于输入。分发与使用时仍须保留上述模型和训练语料署名。
+- 白菜 357k：来自 RVC 官方模型仓库示例，训练数据条款未单列，只作本机使用。
+- 本机丰川祥子 RVC 模型的来源和再分发许可未知，不进入公开包。
 - DDSP-SVC：MIT；预训练编码器、F0、vocoder 和用户模型有独立条款。
 - ContentVec `lengyue233/content-vec-best`：模型卡未声明许可证，当前不再分发。
-- OpenVPI PC-NSF-HiFiGAN：权重所附 `NOTICE.txt` 声明 CC BY-NC-SA 4.0；当前只安装于本机测试环境，不进入发行包。
+- OpenVPI PC-NSF-HiFiGAN：权重声明 CC BY-NC-SA 4.0，只安装于本机环境。
 - RMVPE：来自 yxlllc/RMVPE 官方 230917 release；权重未见单独分发条款，当前不再分发。
-- `TogetsuDo/sakiko-rvc` 与 `TogetsuDo/sakiko-ddsp-svc-6.3`：非官方社区角色音色，Hugging Face 标注 `Other`，未声明再分发授权；只作本机测试。
-- `yuier0721/DDSP-SVC_6.3_pcr-kokkoro_2.0`：模型卡标 MIT，但数据来自角色衍生语音，角色/源音频权利不随模型卡自动授予；只作本机兼容性与试听测试，不进入公开包。
+- `TogetsuDo/sakiko-ddsp-svc-6.3`：非官方社区角色音色，未声明再分发授权，只作本机测试。
+- `yuier0721/DDSP-SVC_6.3_pcr-kokkoro_2.0`：模型卡标 MIT，但角色与训练音频权利不随模型卡自动授予，只作本机兼容测试。
 - `assets/preview_sources/neutral_melody.wav`：由 owstu 的 Freesound “Female Vocal 01.wav” CC0 素材转换，允许复制、修改和再分发。
 - Amphion / Vevo2：代码与预训练模型条款需分别复核，当前不再分发。
 - RMSnow/Vevo2 权重：CC BY-NC-ND 4.0；已本机实测，不再分发。

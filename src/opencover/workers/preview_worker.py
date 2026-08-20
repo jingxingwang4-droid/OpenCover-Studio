@@ -31,8 +31,9 @@ def main(request_file: str) -> int:
         model = ModelRegistry(root / "weights").get(str(data["model_id"]))
         if model is None:
             raise RuntimeError("找不到所选音色")
-        source = root / "assets" / "preview_sources" / "neutral_melody.wav"
-        if not source.is_file():
+        source_dir = (root / "assets" / "preview_sources").resolve()
+        source = Path(str(data.get("input_path", ""))).resolve()
+        if source.parent != source_dir or not source.is_file():
             raise RuntimeError("标准试听干声未安装")
         model_dir = model.directory(root / "weights")
         weight = model_dir / model.model_files[0]

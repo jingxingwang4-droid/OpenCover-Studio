@@ -29,6 +29,7 @@ def main(request_file: str) -> int:
             balance=str(options.get("balance", "均衡")), output_format=str(options.get("output_format", "wav")),
             generator=str(options.get("generator", "auto")),
             memory_profile=str(options.get("memory_profile", "标准")),
+            midi_path=Path(str(options["midi_path"])) if str(options.get("midi_path", "")).strip() else None,
         )
         emit("status", message="正在检查改词组件")
         pipeline = LyricCoverPipeline(root)

@@ -10,8 +10,8 @@ QPushButton#NavButton:hover { background: #33454d; }
 QPushButton#NavButton:checked { color: white; background: #3f5962; font-weight: 600; border-left: 3px solid #5da8a0; }
 QLabel#PageTitle { font-size: 24px; font-weight: 700; color: #172126; }
 QLabel#PageSubtitle { color: #657178; }
-QFrame#Panel { background: white; border: 1px solid #dfe3e2; border-radius: 7px; }
-QFrame#Hero { background: #eef3f0; border: 1px solid #d3ded9; border-radius: 8px; }
+QFrame#Panel { background: rgba(255, 255, 255, 224); border: 1px solid #dfe3e2; border-radius: 7px; }
+QFrame#Hero { background: rgba(238, 243, 240, 218); border: 1px solid #d3ded9; border-radius: 8px; }
 QLabel#CardTitle { font-size: 17px; font-weight: 650; }
 QLabel#Muted { color: #6c777d; }
 QPushButton { background: #ffffff; border: 1px solid #bdc7c9; border-radius: 5px; padding: 7px 13px; }

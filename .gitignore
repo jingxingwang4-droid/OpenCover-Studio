@@ -2,6 +2,8 @@ downloads/
 external_backends/
 ffmpeg/
 assets/audio/
+assets/test_source/
+assets/preview_sources/jingque_first_line.wav
 runtimes/
 weights/
 release_private/

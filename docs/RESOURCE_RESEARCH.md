@@ -14,7 +14,7 @@
 
 按用户要求找到 TogetsuDo 发布的两套非官方社区权重：RVC v2 40k（commit `61676cf...`）和 DDSP-SVC 6.3 Reflow（commit `4b77b1a...`）。两者的 Hugging Face 模型卡都说明未经官方授权，license 字段为 `Other`，也未给出训练数据及再分发许可。项目因此将其标记为“本机已安装并实测、禁止打包再分发”，而非正式内置资源。两份 checkpoint 经 `weights_only` 加载与 unsafe-global 扫描后，分别完成 30 秒和《春日影》全曲真实转换。
 
-标准干声采用 Freesound 用户 owstu 的 “Female Vocal 01.wav”：页面明确标注 CC0，内容为真实女声清唱音阶。HQ preview 转为 9.008 秒、44.1 kHz、16-bit 单声道 `neutral_melody.wav`，SHA256 `de75b75a...256d`。RVC 与 DDSP 的 `preview.wav` 均由这段干声经各自目标模型实际推理生成；标准干声本身从不作为试听结果播放。
+公开发行的标准干声采用 Freesound 用户 owstu 的 “Female Vocal 01.wav”：页面明确标注 CC0，内容为真实女声清唱音阶。HQ preview 转为 9.008 秒、44.1 kHz、16-bit 单声道 `neutral_melody.wav`，SHA256 `de75b75a...256d`。本机现优先使用用户测试曲分离出的《惊鹊》第一句，其 WAV 授权未核验，仅限本地且不进入 Git/公开包。无论使用哪个源，`preview.wav` 都必须由各自目标模型实际推理生成；源干声本身从不作为试听结果播放。
 
 另核验 `yuier0721/DDSP-SVC_6.3_pcr-kokkoro_2.0` revision `aca0687...` 的 `model_500.pt`：219,737,099 bytes、LFS SHA256 `cca82132...dbb`，unsafe globals 为空、weights-only 加载成功并生成 9.009 秒真实试听。模型卡虽标 MIT，训练数据来自角色衍生语音，故不据此推断角色/音频再分发权。
 

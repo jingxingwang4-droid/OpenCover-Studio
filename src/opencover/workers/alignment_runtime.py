@@ -14,13 +14,42 @@ def _ffmpeg_directory(root: Path) -> Path | None:
     return executable.parent if executable else None
 
 
+def _align_one(model, audio: Path, text: str, language: str) -> dict[str, object]:
+    result = model.align(
+        str(audio), text, language=language,
+        original_split=True, failure_threshold=0.2, verbose=None,
+    )
+    if result is None:
+        raise RuntimeError("Whisper 没有产生歌词对齐结果")
+    data = result.to_dict()
+    segments = data.get("segments") or []
+    if not segments:
+        raise RuntimeError("Whisper 对齐结果没有有效分段")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(segments) != len(lines):
+        raise RuntimeError(f"Whisper 返回 {len(segments)} 段，但原歌词有 {len(lines)} 行")
+    last_start = -1.0
+    for segment in segments:
+        start, end = float(segment["start"]), float(segment["end"])
+        if start < 0 or end <= start or start <= last_start:
+            raise RuntimeError("Whisper 返回了无效或非递增的句级时间")
+        last_start = start
+    return data
+
+
 def main(request_file: str) -> int:
     request = json.loads(Path(request_file).read_text(encoding="utf-8"))
     root = Path(request["root"]).resolve()
-    audio = Path(request["audio_path"]).resolve()
     output = Path(request["output_path"]).resolve()
     model_path = root / "external_backends" / "alignment" / "models" / "base.pt"
-    if not audio.is_file() or not model_path.is_file():
+    items = request.get("items")
+    if items is not None:
+        if not isinstance(items, list) or not items:
+            raise RuntimeError("逐句对齐请求没有有效项目")
+        audio_paths = [Path(str(item["audio_path"])).resolve() for item in items]
+    else:
+        audio_paths = [Path(request["audio_path"]).resolve()]
+    if not all(audio.is_file() for audio in audio_paths) or not model_path.is_file():
         raise RuntimeError("对齐输入音频或 Whisper base 模型缺失")
     ffmpeg_dir = _ffmpeg_directory(root)
     if ffmpeg_dir:
@@ -39,29 +68,25 @@ def main(request_file: str) -> int:
         module="stable_whisper.whisper_compatibility",
     )
     model = stable_whisper.load_model(str(model_path), device="cuda")
-    result = model.align(
-        str(audio), str(request["text"]), language=str(request["language"]),
-        original_split=True, failure_threshold=0.2, verbose=None,
-    )
-    if result is None:
-        raise RuntimeError("Whisper 没有产生歌词对齐结果")
-    data = result.to_dict()
-    segments = data.get("segments") or []
-    if not segments:
-        raise RuntimeError("Whisper 对齐结果没有有效分段")
-    lines = [line.strip() for line in str(request["text"]).splitlines() if line.strip()]
-    if len(segments) != len(lines):
-        raise RuntimeError(f"Whisper 返回 {len(segments)} 段，但原歌词有 {len(lines)} 行")
-    last_start = -1.0
-    for segment in segments:
-        start, end = float(segment["start"]), float(segment["end"])
-        if start < 0 or end <= start or start <= last_start:
-            raise RuntimeError("Whisper 返回了无效或非递增的句级时间")
-        last_start = start
+    if items is not None:
+        aligned_items = [
+            _align_one(
+                model, audio,
+                str(item["text"]), str(item.get("language") or "zh"),
+            )
+            for item, audio in zip(items, audio_paths)
+        ]
+        data: dict[str, object] = {"items": aligned_items}
+        runtime_language = "per-item"
+    else:
+        data = _align_one(
+            model, audio_paths[0], str(request["text"]), str(request["language"]),
+        )
+        runtime_language = str(request["language"])
     data["runtime"] = {
         "seconds": time.perf_counter() - started,
         "max_cuda_bytes": torch.cuda.max_memory_allocated(),
-        "language": request["language"],
+        "language": runtime_language,
         "model": "base",
     }
     output.parent.mkdir(parents=True, exist_ok=True)

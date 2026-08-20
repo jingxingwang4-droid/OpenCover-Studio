@@ -8,6 +8,10 @@ from pathlib import Path
 
 _TIMESTAMP = re.compile(r"\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]")
 _METADATA = re.compile(r"^\[(?:ar|al|ti|by|offset|re|ve):", re.IGNORECASE)
+_CREDIT = re.compile(
+    r"^(?:\u4f5c\u8bcd|\u4f5c\u66f2|\u7f16\u66f2|\u539f\u66f2|\u539f\u5531|\u6f14\u5531|\u6b4c\u624b|\u586b\u8bcd|\u8c31\u66f2|\u5236\u4f5c\u4eba|\u5236\u4f5c|\u6df7\u97f3|\u53d1\u884c|\u6240\u5c5e\u4e13\u8f91|\u4e13\u8f91)\s*[:\uff1a]",
+    re.IGNORECASE,
+)
 _PUNCTUATION = re.compile(r"[\s\u3000，。！？、；：,.!?;:'\"“”‘’（）()【】\[\]《》…—-]+")
 
 
@@ -49,6 +53,8 @@ def parse_lyrics(text: str) -> list[LyricCue]:
             continue
         stamps = list(_TIMESTAMP.finditer(line))
         cleaned = _TIMESTAMP.sub("", line).strip()
+        if _CREDIT.match(cleaned):
+            continue
         if stamps:
             if not cleaned:
                 continue
@@ -143,7 +149,9 @@ def build_lyric_segments(original: str, replacement: str, duration: float, strat
         for index, cue in enumerate(timed):
             start = min(duration, max(0.0, float(cue.start or 0.0)))
             end = float(timed[index + 1].start) if index + 1 < len(timed) else duration
-            end = min(duration, max(start + 0.25, end))
+            # LRC usually stores line starts. A large gap contains an
+            # instrumental break or outro, not more lyric phrases.
+            end = min(duration, start + 15.0, max(start + 0.25, end))
             if start < duration:
                 base.append((start, end, cue.text))
     else:

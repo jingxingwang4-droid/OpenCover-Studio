@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import uuid
@@ -12,11 +13,31 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 
 from opencover.storage.database import Database
+from opencover.lyrics.midi import load_midi
 from opencover.models.registry import ModelRegistry
 from opencover.adapters.base import _decode_output
 from .worker_protocol import WorkerEvent
 
 LOG = logging.getLogger(__name__)
+
+
+def snapshot_lyric_midi(record: dict[str, object], job_dir: Path) -> dict[str, object]:
+    """Copy an uploaded score into the immutable job directory."""
+    if record.get("kind") != "lyric" or not isinstance(record.get("options"), dict):
+        return record
+    options = dict(record["options"])
+    midi_value = str(options.get("midi_path", "")).strip()
+    if not midi_value:
+        return record
+    source_midi = Path(midi_value)
+    if not source_midi.is_file():
+        raise FileNotFoundError("MIDI 文件已被移动或删除，请重新上传")
+    load_midi(source_midi)
+    target_midi = job_dir / ("melody" + source_midi.suffix.lower())
+    shutil.copy2(source_midi, target_midi)
+    options["midi_path"] = str(target_midi)
+    options["midi_original_name"] = source_midi.name
+    return {**record, "options": options}
 
 
 class JobManager(QObject):
@@ -40,8 +61,12 @@ class JobManager(QObject):
         model = ModelRegistry(self.root / "weights").get(model_id)
         if model is None:
             raise ValueError("找不到所选音色")
-        source = self.root / "assets" / "preview_sources" / "neutral_melody.wav"
-        if not source.is_file():
+        source_dir = self.root / "assets" / "preview_sources"
+        source = next(
+            (source_dir / name for name in ("jingque_first_line.wav", "neutral_melody.wav") if (source_dir / name).is_file()),
+            None,
+        )
+        if source is None:
             raise FileNotFoundError("标准试听干声未安装")
         job_id = uuid.uuid4().hex
         record = {
@@ -71,9 +96,14 @@ class JobManager(QObject):
 
     def _submit(self, record: dict[str, object], source_module: str) -> str:
         job_id = str(record["id"])
-        self.database.create_job(record)
         job_dir = self.root / "workspace" / "jobs" / job_id
         job_dir.mkdir(parents=True, exist_ok=False)
+        try:
+            record = snapshot_lyric_midi(record, job_dir)
+        except (OSError, ValueError):
+            shutil.rmtree(job_dir)
+            raise
+        self.database.create_job(record)
         request_path = job_dir / "request.json"
         request_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
         (job_dir / "worker.log").write_text(

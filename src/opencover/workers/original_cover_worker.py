@@ -27,6 +27,8 @@ def main(request_file: str) -> int:
             pitch=int(options.get("pitch", 0)), balance=str(options.get("balance", "均衡")),
             output_format=str(options.get("output_format", "wav")),
             memory_profile=str(options.get("memory_profile", "标准")),
+            pitch_mode=str(options.get("pitch_mode", "manual")),
+            source_voice=str(options.get("source_voice", "auto")),
         )
         emit("status", message="正在检查组件")
         pipeline = OriginalCoverPipeline(root)

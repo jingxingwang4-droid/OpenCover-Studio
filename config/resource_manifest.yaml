@@ -1,6 +1,106 @@
 schema_version: 1
 last_updated: "2026-08-10"
 resources:
+  - resource_id: uvr5_source
+    type: backend_source
+    name: Ultimate Vocal Remover GUI
+    author: Anjok07, aufr33, and UVR contributors
+    official_repository: https://github.com/Anjok07/ultimatevocalremovergui
+    source_page: https://github.com/Anjok07/ultimatevocalremovergui
+    download_url: https://github.com/Anjok07/ultimatevocalremovergui.git
+    version: v5.6 repository snapshot
+    tag: ""
+    commit: 5517e0cf0d1acd16a1618eeedec596957523f9e1
+    file_size: null
+    sha256: ""
+    license: MIT
+    redistribution_allowed: true
+    install_directory: external_backends/uvr5
+    backend: uvr5
+    last_verified: "2026-08-12"
+    status: installed_verified
+    notes: 源码固定提交；实际无界面调用由 audio-separator 0.44.5 完成。RTX 5070 Ti 上真实三阶段分离证据见 backend.json。
+
+  - resource_id: uvr5_voc_ft_model
+    type: model
+    name: UVR-MDX-NET Voc FT
+    author: UVR model contributors
+    official_repository: https://github.com/Anjok07/ultimatevocalremovergui
+    source_page: https://github.com/TRvlvr/model_repo/releases/tag/all_public_uvr_models
+    download_url: https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx
+    version: public UVR model snapshot
+    tag: all_public_uvr_models
+    commit: ""
+    file_size: 66762490
+    sha256: 534b2070fcc7df514b13ef660dc8cbb328679c2374d04354a5c42bb14ecce111
+    license: model terms not separately stated
+    redistribution_allowed: false
+    install_directory: external_backends/uvr5/models_runtime/UVR-MDX-NET-Voc_FT.onnx
+    backend: uvr5
+    last_verified: "2026-08-12"
+    status: installed_verified_local_only
+    notes: 第一阶段人声/伴奏分离；真实输出非静音、finite 且与输入哈希不同。授权边界未核验，不进入公开包。
+
+  - resource_id: uvr5_reverb_hq_model
+    type: model
+    name: Reverb HQ By FoxJoy
+    author: FoxJoy / UVR model contributors
+    official_repository: https://github.com/Anjok07/ultimatevocalremovergui
+    source_page: https://github.com/TRvlvr/model_repo/releases/tag/all_public_uvr_models
+    download_url: https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/Reverb_HQ_By_FoxJoy.onnx
+    version: public UVR model snapshot
+    tag: all_public_uvr_models
+    commit: ""
+    file_size: 66780123
+    sha256: 233bb5c6aaa365e568659a0a81211746fa881f8f47f82d9e864fce1f7692db80
+    license: model terms not separately stated
+    redistribution_allowed: false
+    install_directory: external_backends/uvr5/models_runtime/Reverb_HQ_By_FoxJoy.onnx
+    backend: uvr5
+    last_verified: "2026-08-12"
+    status: installed_verified_local_only
+    notes: 第二阶段对分离人声去混响；本机真实 20 秒推理通过。授权边界未核验，不进入公开包。
+
+  - resource_id: uvr5_5hp_karaoke_model
+    type: model
+    name: 5 HP Karaoke UVR
+    author: UVR model contributors
+    official_repository: https://github.com/Anjok07/ultimatevocalremovergui
+    source_page: https://huggingface.co/nomadkaraoke/public_uvr_models/blob/main/5_HP-Karaoke-UVR.pth
+    download_url: https://huggingface.co/nomadkaraoke/public_uvr_models/resolve/main/5_HP-Karaoke-UVR.pth
+    version: public UVR model snapshot
+    tag: main
+    commit: ""
+    file_size: 126782699
+    sha256: fe00891defbb61f4261500af22f7624f1a3df8dc75fa3998d1aece02e6be4537
+    license: model terms not separately stated
+    redistribution_allowed: false
+    install_directory: external_backends/uvr5/models_runtime/5_HP-Karaoke-UVR.pth
+    backend: uvr5
+    last_verified: "2026-08-12"
+    status: installed_verified_local_only
+    notes: 第二阶段从总人声中拆出主唱与和声；真实歌曲副歌 24 秒 CUDA 推理通过，不进入公开包。
+
+  - resource_id: uvr5_anvuew_dereverb_model
+    type: model
+    name: MelBand Roformer De-Reverb SDR 19.1729
+    author: anvuew
+    official_repository: https://huggingface.co/anvuew/dereverb_mel_band_roformer
+    source_page: https://huggingface.co/anvuew/dereverb_mel_band_roformer/blob/main/dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt
+    download_url: https://huggingface.co/anvuew/dereverb_mel_band_roformer/resolve/main/dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt
+    version: main snapshot
+    tag: main
+    commit: 06756c9
+    file_size: 913107578
+    sha256: 9262877b87e9ebb0fb808a456b0a411fa677f5df31c8383c1254af531c078970
+    license: GPL-3.0 model repository; redistribution not enabled here
+    redistribution_allowed: false
+    install_directory: external_backends/uvr5/models_runtime/dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt
+    backend: uvr5
+    last_verified: "2026-08-12"
+    status: installed_verified_local_only
+    notes: 第三阶段强去混响；作者说明该权重还会削弱部分非中央声道和声。完整权重 SHA256 校验及真实歌曲副歌 CUDA 推理均已通过，不进入公开包。
+
   - resource_id: ffmpeg_windows_essentials
     type: runtime
     name: FFmpeg Windows Essentials
@@ -161,96 +261,6 @@ resources:
     status: installed_preview_and_inference_tested_local_only
     notes: 已下载并校验 SHA256；已对《春日影》分离人声 20–50 秒片段完成真实 RVC 推理，并用 CC0 标准干声生成独立 9.000 秒试听，preview SHA256 ad78c1dcf97358825796d9dbbe1f195faf4fcd55b1165ef3f20da02a1f80cbb0。训练数据条款未单列，不进入发行包。
 
-  - resource_id: saisho_utane_rvc_voice
-    type: voice_model
-    name: Saisho Utane RVC v2 voice
-    author: Saisho Utane
-    official_repository: https://huggingface.co/Saisho-Utane/Saisho-Model-RVC
-    source_page: https://huggingface.co/Saisho-Utane/Saisho-Model-RVC/tree/7a61b17e4f014fc5013a489f2b5cd3a7ee9e2b1a
-    download_url: https://huggingface.co/Saisho-Utane/Saisho-Model-RVC/resolve/7a61b17e4f014fc5013a489f2b5cd3a7ee9e2b1a/model.pth
-    version: RVC v2
-    tag: ""
-    commit: 7a61b17e4f014fc5013a489f2b5cd3a7ee9e2b1a
-    file_size: 57577658
-    sha256: 82312a29a3996a451aaa3d3776566cec85b47b5414fce53da82b2d66b04f3d35
-    license: CC BY 4.0; attribution required to Saisho Utane
-    redistribution_allowed: true
-    install_directory: weights/rvc/bundled/saisho_utane_rvc/model.pth
-    backend: rvc
-    last_verified: "2026-08-10"
-    status: installed_preview_and_inference_tested_redistributable
-    bundled_default: true
-    voice_id: saisho_utane_rvc
-    avatar_letter: S
-    voice_metadata:
-      display_name: Saisho Utane（RVC）
-      description: 作者以自有声音训练并公开授权的西班牙语 RVC v2 音色。
-      recommended_pitch: 0
-      languages: [es]
-      featured: true
-      sort_order: 10
-    notes: 模型卡明确说明由作者自有声音训练，并允许在署名条件下公开、商业使用与再分发；checkpoint unsafe globals 为空且 weights_only 加载通过。CC0 标准干声真实试听为 9.000 秒/48 kHz，SHA256 52af2f5965bcd32fc0f34a039fc523cd2e3ab91dc5363151a58c2a14489de440。
-
-  - resource_id: vctk_p231_rvc_voice
-    type: voice_model
-    name: VCTK p231 female RVC voice
-    author: Nekochu; VCTK creators Christophe Veaux, Junichi Yamagishi, Kirsten MacDonald
-    official_repository: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample
-    source_page: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample/tree/005c2f948ee9dafd7e3aa7f261b4c3a24beebeef/F/p231
-    download_url: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample/resolve/005c2f948ee9dafd7e3aa7f261b4c3a24beebeef/F/p231/Fp231.pth
-    version: RVC v2 / 250 epochs
-    tag: ""
-    commit: 005c2f948ee9dafd7e3aa7f261b4c3a24beebeef
-    file_size: 55193241
-    sha256: 26d3c122a6429a0a1925cb12098408b9d41967089e08098b95a7b4f593e2e372
-    license: Apache-2.0 model repository; VCTK corpus CC BY 4.0
-    redistribution_allowed: true
-    install_directory: weights/rvc/bundled/vctk_p231_rvc/model.pth
-    backend: rvc
-    last_verified: "2026-08-10"
-    status: installed_preview_and_inference_tested_redistributable
-    bundled_default: true
-    voice_id: vctk_p231_rvc
-    avatar_letter: F
-    voice_metadata:
-      display_name: VCTK p231 女声（RVC）
-      description: 使用 CC BY 4.0 VCTK p231 说话人语料训练的英语女声音色。
-      recommended_pitch: 0
-      languages: [en]
-      featured: true
-      sort_order: 20
-    notes: 仓库模型卡固定 Apache-2.0 并明确训练集为 VCTK；p231 为英语女声。无 index 路径真实试听 9.000 秒/40 kHz，SHA256 29deafb93e896e1e7eeab3b1771b56e3fe26f17f113a6be9f611b92ca77212c2。
-
-  - resource_id: vctk_p226_rvc_voice
-    type: voice_model
-    name: VCTK p226 male RVC voice
-    author: Nekochu; VCTK creators Christophe Veaux, Junichi Yamagishi, Kirsten MacDonald
-    official_repository: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample
-    source_page: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample/tree/005c2f948ee9dafd7e3aa7f261b4c3a24beebeef/M/p226
-    download_url: https://huggingface.co/Nekochu/RVC-VCTK_Voice-sample/resolve/005c2f948ee9dafd7e3aa7f261b4c3a24beebeef/M/p226/Mp226.pth
-    version: RVC v2 / 250 epochs
-    tag: ""
-    commit: 005c2f948ee9dafd7e3aa7f261b4c3a24beebeef
-    file_size: 55193241
-    sha256: 3c4c2e8ea977d7c08793126aace4baa47028b4c1bf7cd46ae5a9c359b0216693
-    license: Apache-2.0 model repository; VCTK corpus CC BY 4.0
-    redistribution_allowed: true
-    install_directory: weights/rvc/bundled/vctk_p226_rvc/model.pth
-    backend: rvc
-    last_verified: "2026-08-10"
-    status: installed_preview_and_inference_tested_redistributable
-    bundled_default: true
-    voice_id: vctk_p226_rvc
-    avatar_letter: M
-    voice_metadata:
-      display_name: VCTK p226 男声（RVC）
-      description: 使用 CC BY 4.0 VCTK p226 说话人语料训练的英语男声音色。
-      recommended_pitch: -12
-      languages: [en]
-      featured: true
-      sort_order: 30
-    notes: 仓库模型卡固定 Apache-2.0 并明确训练集为 VCTK；p226 为英语男声。无 index、推荐 -12 半音路径真实试听 9.000 秒/40 kHz，SHA256 d651b9c6e496b45dd3ec79cf367b7c9377ac3fc6c5f4a6da520587a1f9230a9e。
-
   - resource_id: ddsp_svc_source
     type: backend_source
     name: DDSP-SVC
@@ -267,9 +277,9 @@ resources:
     redistribution_allowed: true
     install_directory: external_backends/ddsp/DDSP-SVC
     backend: ddsp
-    last_verified: "2026-08-09"
-    status: inference_smoke_tested
-    notes: 官方 README 的 Windows Python 3.11/CUDA 13 路线；独立运行时为 Python 3.11.5、PyTorch/torchaudio 2.9.1+cu130，RTX 5070 Ti CUDA smoke test、30 秒模型推理和《春日影》全曲 GUI worker 均通过。
+    last_verified: "2026-08-13"
+    status: installed_inference_smoke_tested
+    notes: 固定提交 2e2ac5d34ffe08cb1a03fdffd51742e62b8bcf8c；独立 Python 3.12、PyTorch/torchaudio 2.9.1+cu130 环境在 RTX 5070 Ti 上完成祥子与可可萝真实 CUDA 推理。
 
   - resource_id: ddsp_contentvec
     type: model
@@ -287,9 +297,9 @@ resources:
     redistribution_allowed: false
     install_directory: external_backends/ddsp/DDSP-SVC/pretrain/contentvec/pytorch_model.bin
     backend: ddsp
-    last_verified: "2026-08-10"
+    last_verified: "2026-08-13"
     status: installed_inference_smoke_tested
-    notes: DDSP-SVC 推理依赖；固定 revision、校验 SHA256 并完成真实推理。因未见明确再分发许可，不进入发行包。
+    notes: 固定 revision、大小与 SHA256 二次校验后安装，并被两套 DDSP 音色真实 CUDA 推理加载；不进入公开发行包。
 
   - resource_id: ddsp_nsf_hifigan
     type: model
@@ -301,15 +311,15 @@ resources:
     version: PC-NSF-HiFiGAN 44.1k 128-bin 2025.02
     tag: pc-nsf-hifigan-44.1k-hop512-128bin-2025.02
     commit: ""
-    file_size: 56663267
-    sha256: d6dd28909d2a1a2dcf74b3e3aa0b82b48695b87979fdf41561940aeecd85c67f
+    file_size: 52675337
+    sha256: 9d98ba73727f2abb75172cf8249d75182237e8472fc3b6ed09c721ae8b0e83c6
     license: CC BY-NC-SA 4.0 (model weight and bundled NOTICE)
     redistribution_allowed: false
     install_directory: external_backends/ddsp/DDSP-SVC/pretrain/nsf_hifigan/model
     backend: ddsp
-    last_verified: "2026-08-10"
+    last_verified: "2026-08-13"
     status: installed_inference_smoke_tested
-    notes: DDSP-SVC README 直链的官方 release ZIP，经安全解压后校验模型文件；真实 DDSP 推理通过。压缩包 SHA256 9d98ba73727f2abb75172cf8249d75182237e8472fc3b6ed09c721ae8b0e83c6。因非商业、署名和相同方式共享条件，当前不打入发行包。
+    notes: 清单大小与 SHA256 对应官方 release ZIP；安装后模型文件为 56663267 bytes、SHA256 d6dd28909d2a1a2dcf74b3e3aa0b82b48695b87979fdf41561940aeecd85c67f。不进入公开发行包。
 
   - resource_id: ddsp_rmvpe
     type: model
@@ -321,15 +331,15 @@ resources:
     version: 230917 release
     tag: "230917"
     commit: ""
-    file_size: 368492925
-    sha256: 19dc1809cf4cdb0a18db93441816bc327e14e5644b72eeaae5220560c6736fe2
+    file_size: 340638958
+    sha256: 54ae40d9c066d998b94574f6ef0deea19ed1565bd655b3f0d9b1ad612fb5309c
     license: repository license/model-weight terms not separately stated
     redistribution_allowed: false
     install_directory: external_backends/ddsp/DDSP-SVC/pretrain/rmvpe/model.pt
     backend: ddsp
-    last_verified: "2026-08-10"
+    last_verified: "2026-08-13"
     status: installed_inference_smoke_tested
-    notes: 官方 release ZIP 经安全解压；checkpoint unsafe globals 扫描为空且 weights_only 加载成功。压缩包 SHA256 54ae40d9f0d9a6d2ea4a9ecba6855a2c60eb43ff93a38bc70f12cac42bd35309。
+    notes: 清单大小与 SHA256 对应官方 release ZIP；Blob MD5 2fec41d2c4b62170e850ef54c1d04fec 与官方响应一致。安装后 model.pt 为 368492925 bytes、SHA256 19dc1809cf4cdb0a18db93441816bc327e14e5644b72eeaae5220560c6736fe2。
 
   - resource_id: amphion_vevo2_source
     type: optional_backend_source
@@ -597,22 +607,22 @@ resources:
   - resource_id: toyokawa_sakiko_rvc
     type: voice_model
     name: 丰川祥子 RVC
-    author: TogetsuDo
-    official_repository: https://huggingface.co/TogetsuDo/sakiko-rvc
-    source_page: https://huggingface.co/TogetsuDo/sakiko-rvc/tree/61676cf82a23a9d736c0501021c905cf8b9c2e2f
-    download_url: https://huggingface.co/TogetsuDo/sakiko-rvc/resolve/61676cf82a23a9d736c0501021c905cf8b9c2e2f/sakiko_v2.pth
-    version: RVC v2 40k community model
+    author: unknown (user-provided local model)
+    official_repository: ""
+    source_page: local:downloads/Saki
+    download_url: ""
+    version: RVC v2 48k local model
     tag: ""
-    commit: 61676cf82a23a9d736c0501021c905cf8b9c2e2f
-    file_size: 55225035
-    sha256: 1a5640c299d70631b3ecc54f68b3939afe243fbb39c4017310045ee2e4ca50ae
-    license: Other; unofficial community model; no redistribution grant stated
+    commit: ""
+    file_size: 57552768
+    sha256: 292ea7375886f28abb9d5cfa4d6563651a059d01a29cdbbddfaee15ebde5aa91
+    license: Unknown; local-only; redistribution not permitted
     redistribution_allowed: false
     install_directory: weights/rvc/bundled/toyokawa_sakiko_rvc
     backend: rvc
-    last_verified: "2026-08-09"
+    last_verified: "2026-08-10"
     status: installed_inference_smoke_tested_local_only
-    notes: 模型卡明确标注非官方且未经角色/版权方授权；只在用户要求下本机下载测试，不随 Git/发行包再分发。index 315004059 bytes，SHA256 bcb530c44bedfe05cc1644da7ab3df89a931abb8d8531bdc824ff29481a78578。weights_only 安全加载通过；30 秒 indexed 推理及《春日影》全曲 worker 推理通过；试听由 CC0 标准干声真实生成。
+    notes: 用户从 downloads/Saki 提供的本地权重；来源、作者和再分发许可未知，不随 Git/公开发行包分发。checkpoint 为 RVC v2、48 kHz、带 F0；weights_only 安全加载通过。index 225015699 bytes、768 维、71231 vectors，SHA256 b53278252fe433cffe9c58b5e4ea98ac904e8b2783518356da1d013486939a01。标准干声 indexed 真实推理通过并重新生成试听。
 
   - resource_id: toyokawa_sakiko_ddsp
     type: voice_model
@@ -630,9 +640,9 @@ resources:
     redistribution_allowed: false
     install_directory: weights/ddsp/bundled/toyokawa_sakiko_ddsp
     backend: ddsp
-    last_verified: "2026-08-09"
-    status: installed_inference_smoke_tested_local_only
-    notes: 非官方社区模型且未获角色/版权方授权，只在本机测试。config.yaml SHA256 5663203319aaf208f292ad1ef7506faa7132e5857f38838f2bbfecc61423dd08。weights_only 安全加载通过；30 秒及《春日影》全曲真实推理通过；不随 Git/发行包再分发。
+    last_verified: "2026-08-13"
+    status: installed_preview_inference_tested_local_only
+    notes: 非官方社区模型且未获角色/版权方授权，只限本机测试。权重/config/avatar 哈希已核验；CC0 干声真实 CUDA 输出 9.009 秒、SHA256 2c784ecd07599db579744c76263cc9b2b02d6e955e543b8f6e60ea9e8c3cc2f。
 
   - resource_id: kokkoro_ddsp_community
     type: voice_model
@@ -650,9 +660,9 @@ resources:
     redistribution_allowed: false
     install_directory: weights/ddsp/user_models/kokkoro_ddsp_community
     backend: ddsp
-    last_verified: "2026-08-10"
+    last_verified: "2026-08-13"
     status: installed_preview_inference_tested_local_only
-    notes: Hugging Face 固定 revision 与 LFS SHA256 匹配；unsafe globals 为空且 weights_only=True 加载成功。原 config SHA256 ad8e1970...a680；为复用官方 ContentVec 文件仅将 encoder_ckpt 改为 pytorch_model.bin，有效 config SHA256 9f70ef75...cdd6。CC0 标准干声真实 DDSP 推理输出 9.009 秒，preview SHA256 440ab50d49026dac0e76de76fdaebbb4cc0e009fe8f1d288d9f81e9b62ea3d1f。训练数据源自角色衍生语音，故只在本机测试、不再分发。
+    notes: 固定 revision、权重、兼容配置和头像哈希均已记录。CC0 干声真实 CUDA 输出 9.009 秒、SHA256 e6c2dfeb3ce94c886c69ef383e73c65571676cc9ee0f875d4f9ba146f755a7b9；只作本机兼容测试，不再分发。
 
   - resource_id: neutral_melody
     type: preview_source_audio

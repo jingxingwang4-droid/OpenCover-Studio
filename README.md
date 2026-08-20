@@ -1,10 +1,12 @@
 # OpenCover Studio
 
-OpenCover Studio 是面向 Windows 普通用户的本地歌曲翻唱桌面应用。当前仓库是 **v0.1.0 阶段性可运行版本**：桌面 GUI、模型导入/编辑、独立任务、SQLite、安全下载、音频标准化/分离/转换/混音与真实试听均已实现；MSST + RVC 和 MSST + DDSP 都在本机对 `assets/audio/春日影.wav` 完成了真实 CUDA 全曲推理。
+OpenCover Studio 是面向 Windows 普通用户的本地歌曲翻唱桌面应用。当前仓库是 **v0.1.0 阶段性可运行版本**：桌面 GUI、RVC/DDSP 模型导入与编辑、独立任务、SQLite、安全下载、音频标准化、分离、转换、混音与真实试听均已实现。
 
 首页会从 SQLite 显示最近完成任务，并从本地模型注册表显示推荐音色；原词和改词页都能在提交前播放输入歌曲。音色管理支持名称/简介/语言搜索、推荐优先/名称/最近使用排序、置顶与隐藏内置。设置页会即时保存显存模式、下次启动默认格式和托盘关闭行为。
 
-“改词翻唱 Beta”现已接入 GUI 和 JobManager：支持粘贴或导入 UTF-8/GBK/Shift-JIS 的 TXT/LRC，执行 MSST → LRC/Whisper 强制对齐 → 短句规划 → Vevo2 → 时长拼接 → RVC/DDSP → 混音。Vevo2 不可用或推理失败时，会自动切换到 GAME 提取旋律 → 中文字符映射 → 原版 DiffSinger OpenCpop 模型合成 → RVC/DDSP。主路径和回退路径都已生成真实、非静音 WAV。安装歌词对齐扩展后，无时间戳原歌词会在分离人声上自动生成句级时间并缓存；复杂歌声仍可改用 LRC。DiffSinger 回退当前只支持含中文汉字的新歌词，且其旧版权重许可不明确，只进入本机完整包，不进入公开发行包。
+“改词翻唱 Beta”现已接入 GUI 和 JobManager：支持粘贴或导入 UTF-8/GBK/Shift-JIS 的 TXT/LRC，并可选上传 `.mid/.midi` 旋律文件。上传 MIDI 后会读取速度变化、自动选择非鼓组主旋律轨道并对齐 LRC 时间轴；未上传时由 GAME 从原唱提取旋律。自动模式会先将原唱逐字边界映射到连续 F0 复核后的 GAME 音符，再用本机 legacy OpenCpop DiffSinger 按谱生成；同一《惊鹊》短句的实测中文吐字优于当前 VISinger2。完整链路执行 MSST/UVR5 → LRC/Whisper 强制对齐 → GAME/MIDI + 连续 F0 → DiffSinger → 逐句 RVC 后校时拼接 → 混音。VISinger2 保留为 DiffSinger 不可用时的按谱后备；两套权重的许可与发行边界见资源清单。
+
+该功能仍不具备已验证的跨歌曲泛用性。《惊鹊》首句复听仍发现“柳絮满长街”听感跑调，且当前 Sakiko RVC 会明显破坏普通话音素。现阶段只建议将“普通话、清晰单主唱、新旧歌词汉字数相同、每句 3～15 秒”作为实验输入；不同字数、快歌、说唱、密集转音、和声/混响重、非中文或未经逐句人工试听的结果都不能视为可靠成品。
 
 ## 本地开发运行
 
@@ -22,22 +24,22 @@ python -m venv .venv
 
 ## 使用流程
 
-1. 在“组件管理”确认 FFmpeg、MSST 与 RVC 或 DDSP 已经安装且通过真实 smoke test。
-2. 在“音色管理”或“原词翻唱”点击“导入音色”。RVC 接受 `.pth` 和可选 `.index`；DDSP 接受 `.pt/.ckpt` 和可选配置。
-3. 试听可明确选择“自动生成 / 上传 / 暂不生成”。上传支持 WAV/FLAC/MP3/M4A，经 FFmpeg 限长并统一为 `preview.wav`；自动模式用 CC0 标准干声和目标模型真实推理。
-4. 拖入歌曲，先选 RVC/DDSP，再选对应音色，点击“开始翻唱”。分离、改词生成、音色转换、混音和格式分别缓存；换混音或格式不会重复模型推理。
-5. 改词页优先使用带时间戳 LRC；纯文本原歌词在对齐组件可用时会用 Stable-ts + Whisper 强制对齐到 MSST 人声，否则长音频明确要求 LRC。每句被限制在约 3～15 秒范围，新歌词密度超出所选“保守/均衡/强制”策略时会明确拒绝。
+1. 在“组件管理”确认 FFmpeg、分离组件以及 RVC 或 DDSP 已经安装且通过真实 smoke test。
+2. 在“音色管理”或“原词翻唱”点击“导入音色”。RVC 接受 `.pth/.pt` 和可选 `.index`；DDSP 接受 `.pt/.ckpt` 和配套 `.yaml/.yml`，导入后统一保存为上游要求的 `config.yaml`。
+3. 试听可明确选择“自动生成 / 上传 / 暂不生成”。上传支持 WAV/FLAC/MP3/M4A，经 FFmpeg 限长并统一为 `preview.wav`；自动模式优先用本机《惊鹊》第一句干声（存在时），否则回退到 CC0 标准干声，并始终通过目标模型真实推理。
+4. 拖入歌曲，选择 RVC 或 DDSP 音色并点击“开始翻唱”。分离、改词生成、音色转换、混音和格式分别缓存；换混音或格式不会重复模型推理。
+5. 改词页优先使用带时间戳 LRC；如有对应旋律 MIDI，可在“旋律 MIDI（可选）”上传。完整歌曲 MIDI 应保留从歌曲 0 秒开始的时间轴；只含人声旋律、从 0 秒开始的 MIDI 也会尝试自动对齐到第一句 LRC。纯文本原歌词在对齐组件可用时会用 Stable-ts + Whisper 强制对齐到 MSST 人声，否则长音频明确要求 LRC。每句被限制在约 3～15 秒范围，新歌词密度超出所选“保守/均衡/强制”策略时会明确拒绝。
 6. “任务记录”可直接重新生成，或为原词/改词/试听任务更换同引擎音色后再生成；播放器提供独立音量滑块。历史表显示音色头像，并可导出包含 `job.json`、`request.json` 与 `worker.log` 的 ZIP 日志包。
 
 每个 worker 的标准输出、标准错误和退出状态都会按 UTC 时间写入任务目录。应用异常退出后，下一次启动会把遗留的 `pending/running` 任务标记为可重新生成的失败记录；运行期间托盘菜单和提示文字显示任务 ID、进度与当前阶段。
 
-RVC/DDSP 转换若捕获到明确的 CUDA OOM，会等待失败的后端子进程退出并释放 CUDA 上下文，再按显存模式使用 8～45 秒分段有限重试；次数有限，仍失败时任务记录显示 `CUDA_OOM`，不会无限循环。“极低/低”模式还会把 Vevo2 flow steps 从标准 32 降到 16/24。Vevo2 主路径失败时自动切换 GAME + DiffSinger。实体低显存显卡上的 OOM/Legacy 兼容性仍需独立验收。
+RVC 转换若捕获到明确的 CUDA OOM，会等待失败的后端子进程退出并释放 CUDA 上下文，再按显存模式使用 8～45 秒分段有限重试；次数有限，仍失败时任务记录显示 `CUDA_OOM`，不会无限循环。“极低/低”模式还会把显式 Vevo2 路径的 flow steps 从标准 32 降到 16/24。改词歌声会在每个生成短句仍未做全曲校时前逐句 RVC，并只加载一次音色模型，避免前后静音和整轨时伸破坏辅音、短转音。
 
-`assets/preview_sources/neutral_melody.wav` 来自 owstu 在 Freesound 发布的 CC0 清唱素材，9.008 秒。当前本机另安装并验证了 TogetsuDo 的丰川祥子 RVC/DDSP 社区模型；它们均为非官方且没有明确再分发许可，因此被 `.gitignore` 排除，也不会打入公开发行包。资源真实状态详见 `config/resource_manifest.yaml` 与 `docs/RESOURCE_RESEARCH.md`。
+`assets/preview_sources/jingque_first_line.wav` 是从用户本机《惊鹊》测试曲的真实分离主唱中截取的 5.52 秒片段，只用于本机音色试听，不进入 Git 或公开发行包。没有该本机片段时，程序使用 owstu 在 Freesound 发布的 9.008 秒 CC0 清唱素材 `neutral_melody.wav`。两种源音频都只能作为模型输入，不会直接冒充转换结果。当前本机的丰川祥子 RVC 模型来源和再分发许可未知，因此被 `.gitignore` 排除，也不会打入公开发行包。资源状态详见 `config/resource_manifest.yaml`。
 
-公开包固定内置三套可再分发 RVC 音色：作者自有声音的 Saisho Utane，以及使用 VCTK CC BY 4.0 语料训练的 p231 女声和 p226 男声。三者均已通过固定 LFS SHA256、checkpoint unsafe-global/`weights_only` 检查，并分别由标准干声生成了不同的真实试听；不使用仓库人物图，头像是项目生成的 512×512 首字母占位图。源码环境可运行 `.venv\Scripts\python.exe scripts\install_bundled_rvc_voices.py --generate-previews` 复现下载、安装和试听验收。DDSP 仍没有达到同等训练声音权利证据的 3～5 套公开内置音色，不会用角色模型凑数。
+RVC 当前只保留白菜 357k 与丰川祥子两套本机音色。DDSP 已恢复丰川祥子及此前用于兼容验证的可可萝社区模型。角色衍生模型的训练数据或再分发权利均未完整核验，因此不会随公开发行包分发。
 
-若 `assets/背景1.*` 存在，GUI 优先将其用作固定背景并添加浅色内容蒙层；背景 2/3 保留但不轮播。`assets/祥子音色头像.jpg` 用于尚未安装的祥子固定音色占位卡，不代表相关 RVC/DDSP 权重已获得授权或通过推理。
+若 `assets/背景1.*` 存在，GUI 优先将其用作固定背景并添加约 68% 不透明的浅色内容蒙层；背景 2/3 保留但不轮播。`assets/祥子音色图标.jpg` 用作祥子音色头像及尚未安装时的占位卡，`assets/图标.jpg` 用作软件与系统托盘图标；这些图片不代表相关 RVC 权重已获得授权。
 
 ## 构建
 
@@ -48,9 +50,9 @@ RVC/DDSP 转换若捕获到明确的 CUDA OOM，会等待失败的后端子进�
 
 构建脚本生成 windowed GUI 和独立 `OpenCoverStudioWorker.exe`。Qt 以 `CREATE_NO_WINDOW` 启动 worker，因此没有可见终端，同时保留 UTF-8 JSON Lines 进度、SQLite 状态和进程树取消。公开 Modern/Legacy 阶段包含 GUI、worker、顶层 assets/config、FFmpeg 与 CC0 试听源；受限制权重不进入公开包。
 
-构建时对三套公开 RVC 音色使用固定 ID 白名单，并重新核对元数据许可标记与模型、头像、试听 SHA256；缺一项就终止构建。它不会递归复制整个本机 `weights/`，因此祥子和其他本机社区模型不会意外进入公开包。
+公开构建不会递归复制本机 `weights/`，因此白菜、祥子和其他本机模型不会意外进入公开包。
 
-`./scripts/build_local_full.ps1 Modern` 另可在 `release_private/` 组装当前机器专用的约 26.769 GiB 完整目录；它包含不可再分发的社区模型、Vevo2、GAME、旧版 DiffSinger 权重，以及可再分发但体积较大的独立 Whisper/CUDA 对齐环境，必须遵守 `LOCAL_ONLY_FULL_PACKAGE.txt`，不能把其中受限模型公开上传。该私有包的冻结 worker 已完成 Vevo2 主路径、GAME + DiffSinger 回退和无时间戳歌词强制对齐端到端测试。Legacy 尚无实体旧显卡/CUDA 11.8 验收，不宣称已兼容。
+`./scripts/build_local_full.ps1 Modern` 可在 `release_private/OCS-Private-Modern` 组装仅供同一用户在自己电脑之间迁移的完整目录。组装器为 MSST、UVR5、RVC、DDSP、Vevo2、GAME、Whisper 对齐和 VISinger2 环境嵌入包内 Python 基础运行时，移除 `pyvenv.cfg` 与 RVC editable 绝对路径；目标电脑无需 Python、Conda 或 CUDA Toolkit，但仍需要兼容的 64 位 Windows、NVIDIA 显卡和驱动。该包含受限社区模型，只能遵守 `LOCAL_ONLY_FULL_PACKAGE.txt` 私人使用，不能公开上传。DDSP 资源可用 `./scripts/restore_ddsp_resources.ps1 -Install` 按固定来源、大小和 SHA-256 自动恢复。
 
 源码环境可运行 `./scripts/install_alignment.ps1` 安装固定版本的对齐扩展；脚本使用独立 Python 3.10 环境、核验官方 Whisper 模型 SHA256，并且只有真实 CUDA 强制对齐 smoke 通过后才写入可用 marker。Stable-ts 上游已于 2026-05-30 归档，此维护风险会保留在组件说明中。
 

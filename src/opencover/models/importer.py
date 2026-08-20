@@ -52,6 +52,7 @@ class ModelImporter:
         self, *, engine: str, weight: Path, display_name: str, description: str = "",
         index_or_config: Path | None = None, avatar: Path | None = None,
         preview: Path | None = None, model_id: str | None = None,
+        voice_gender: str = "unknown",
     ) -> VoiceModel:
         if engine not in {"rvc", "ddsp"}:
             raise ValueError("不支持的引擎")
@@ -82,7 +83,7 @@ class ModelImporter:
                 expected = {".index"} if engine == "rvc" else {".yaml", ".yml"}
                 if extra.suffix.lower() not in expected:
                     raise ValueError("索引/配置文件类型与引擎不匹配")
-                extra_name = ("model.index" if engine == "rvc" else "config.yaml")
+                extra_name = "model.index" if engine == "rvc" else "config.yaml"
                 _copy_exclusive(extra, target / extra_name)
                 copied.append(target / extra_name)
                 hashes[extra_name] = sha256(extra)
@@ -98,6 +99,7 @@ class ModelImporter:
                 engine=engine, model_files=[model_name], index_files=indexes, config_files=configs,
                 avatar=avatar_name, preview=preview_name,
                 preview_source="uploaded" if preview_name else "none", sha256=hashes,
+                voice_gender=voice_gender,
             )
             (target / "model.json").write_text(model.model_dump_json(indent=2), encoding="utf-8")
             return model
@@ -162,7 +164,7 @@ class ModelImporter:
 
     def update_model(
         self, model_id: str, *, display_name: str, description: str, recommended_pitch: int,
-        languages: list[str], avatar: Path | None = None, preview: Path | None = None,
+        languages: list[str], voice_gender: str = "unknown", avatar: Path | None = None, preview: Path | None = None,
         remove_preview: bool = False, featured: bool | None = None,
     ) -> VoiceModel:
         model = self.registry.get(model_id)
@@ -176,6 +178,7 @@ class ModelImporter:
             "display_name": display_name.strip() or model.display_name,
             "description": description.strip(),
             "recommended_pitch": recommended_pitch,
+            "voice_gender": voice_gender,
             "languages": [item.strip() for item in languages if item.strip()],
         }
         if featured is not None:

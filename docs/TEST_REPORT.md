@@ -1,5 +1,29 @@
 # 测试报告（2026-08-10）
 
+## 私人跨电脑 Modern 包（2026-08-20）
+
+完整便携运行时、冻结 GUI、真实 RVC/DDSP Worker 输出和目标笔记本未验收边界，见 `docs/PRIVATE_PACKAGE_VALIDATION_2026-08-20.md`。
+
+## UI 背景与《惊鹊》音色试听复验（2026-08-17）
+
+- 固定背景 1 的整页浅色蒙层从 alpha 232 降为 174，主面板改为 alpha 218–224；已生成 1200×760 正式 QSS 离屏截图 `workspace/validation/ui_background_after.png` 人工检查，背景主体可见，深色文字仍有浅色蒙层/面板承托。
+- 在线核对的第一句为“白马过了离原，三月的天，春风漫草野”。已使用工作区现有真实 UVR5 分离主唱和 Whisper 1.98–7.04 秒对齐证据，截取为 5.520 秒、44.1 kHz、单声道 PCM16 本机干声，SHA256 `def173c3d7b3fa9a9b7e819d5c68062a2afaabd97d41534bb8a8cac7d5945114`。
+- 5 个当前音色均经各自目标模型真实重建：祥子 DDSP `fff898d6...e5962`，可可萝 DDSP `37cb8de1...02e`，祥子本机 DDSP v2 `bccfd2d5...741e`，祥子 RVC `1d7f7814...e0065`，白菜 RVC `29622150...a626`。5 份输出哈希互不相同且与输入不同，时长 5.50–5.53 秒，平均音量 -13.9 至 -16.1 dB，峰值 -0.1 至 -1.9 dB，非静音。
+- 定向 GUI/worker 4 项及当前全量 55 项 pytest 均通过。本机《惊鹊》 WAV 及原曲均被 Git/公开构建排除；公开包仍使用已核验 CC0 `neutral_melody.wav` 回退。
+
+## DDSP 恢复复验（2026-08-13）
+
+- DDSP-SVC 固定 commit `2e2ac5d34ffe08cb1a03fdffd51742e62b8bcf8c`；隔离环境为 Python 3.12、PyTorch/torchaudio 2.9.1+cu130，RTX 5070 Ti CUDA 可用，`pip check` 无依赖冲突。
+- ContentVec：378,342,945 bytes，SHA256 `d8dd400e054ddf4e6be75dab5a2549db748cc99e756a097c496c099f65a4854e`。
+- PC-NSF-HiFiGAN：官方 ZIP 52,675,337 bytes / SHA256 `9d98ba73727f2abb75172cf8249d75182237e8472fc3b6ed09c721ae8b0e83c6`；安装后模型 56,663,267 bytes / SHA256 `d6dd28909d2a1a2dcf74b3e3aa0b82b48695b87979fdf41561940aeecd85c67f`。
+- RMVPE：官方 ZIP 340,638,958 bytes / SHA256 `54ae40d9c066d998b94574f6ef0deea19ed1565bd655b3f0d9b1ad612fb5309c`，Blob MD5 `2fec41d2c4b62170e850ef54c1d04fec` 与官方响应一致；内部模型 368,492,925 bytes / SHA256 `19dc1809cf4cdb0a18db93441816bc327e14e5644b72eeaae5220560c6736fe2`。此前文档中的 ZIP SHA256 有抄录错误，本轮已纠正。
+- RMVPE、祥子和可可萝三个 checkpoint 的 unsafe globals 均为空，`torch.load(weights_only=True)` 均成功。
+- 祥子 DDSP 对 CC0 标准干声真实 CUDA 输出 9.009342 秒、44.1 kHz、RMS 0.03544、peak 0.32010、finite/nonzero 均为 true，SHA256 `2c784ecd07599db579744c76263cc9b2b02d6e955e543b8f6e60ea9e8c3cc2f`。
+- 可可萝 DDSP 对同一干声真实 CUDA 输出 9.009342 秒、44.1 kHz、RMS 0.04786、peak 0.18530、finite/nonzero 均为 true，SHA256 `e6c2dfeb3ce94c886c69ef383e73c65571676cc9ee0f875d4f9ba146f755a7b9`。
+- OpenCover Studio 自己的 `DDSPAdapter` 再次完成真实转换，状态为 `installed=True, runnable=True`；最终 `.venv\Scripts\python.exe -m pytest -q` 为 `51 passed`，全量 Python 编译通过。
+
+以下内容是 2026-08-10 的历史测试记录；其中当时的环境版本、公开音色和发行包数量不代表 2026-08-13 当前工作区状态。
+
 ## 环境与自动化
 
 - Windows 10 build 26200；GUI Python 3.10.20；PySide6 6.11.1。
@@ -81,11 +105,50 @@
 - 源码 JobManager 的无时间戳完整链“Whisper→GAME→DiffSinger→祥子 RVC→混音”32.5 秒完成；输出 9.008 秒、RMS 0.05424、peak 0.98、SHA256 `cfed28b63ad655bcfc247d8fae94c1c21f7fdd3c5fac8fb6c154cfe36c20ece5`。相同请求复跑 1.4 秒，日志同时证明对齐、生成和最终缓存命中。
 - 同步后的冻结完整包以全新歌词执行同一链路，61 秒完成；其中冷启动对齐约 24.9 秒。输出 9.008 秒、44.1 kHz、双声道、RMS 0.05515、peak 0.98、finite/nonzero 均为 true，SHA256 `b4e30346bcaa2e7ce15f94c77841cf2eb2b100eb9d7424c95adb05cf3787ee6e`。
 
+## 2026-08-17 改词音质缺陷修复复验
+
+- 复现旧缺陷：5 秒 Vevo2 目标短句在未限制 AR token 时真实生成 30.8 秒音频；旧线性重采样会把它强压回目标时间并连带改变音高。
+- 新增 FFmpeg Rubber Band 保音高校时。440 Hz / 1.0 秒正弦拉长到 1.2 秒后主频仍在 440±3 Hz；拉长到 2.0 秒会明确拒绝，不再产生 220 Hz 伪结果。
+- 同一真实《惊鹊》短句重新执行自动链：UVR5 分离缓存 → Vevo2 → 保音高校时 → 丰川祥子 RVC → 混音，未触发 DiffSinger 回退。Vevo2 原始段为 5.760 秒/24 kHz/单声道，SHA256 `892d854c7f19452db08788c17221f2908c596c0e22c539fd8ee429236af2e3c7`；校时拼接人声 5.518367 秒/44.1 kHz，SHA256 `ac608b1ecaa36160438cd0b7280e980a82492d468ac9b050027fbab36eff2416`。
+- 最终真实输出为 5.520 秒/44.1 kHz/双声道，RMS 0.092065、peak 0.610340、finite=True，SHA256 `198d9a1388e2a8eb827557618c1635542131b6ed6e9b2df5fdc0a5581e81ad10`。
+- GAME + DiffSinger 回退也以新增 SP/AP 休止输入真实跑通一条短句；项目 DiffSinger G2P 实测将 `SP春日AP` 解析为 `['SP', 'chun', 'ri', 'AP']`。
+- `.venv\Scripts\python.exe -m pytest -q`：62 项全部通过；新增测试覆盖 Vevo2 首选路由、AR 时长 token 上限、休止/原时值保留、保音高校时和极端拉伸拒绝。
+- 复核该输出后确认 UVR5 的 `other.wav` 并非伴奏：它与标准化原输入的波形相关度为 `0.999310474`、RMS 比为 `0.293449923`，原流程随后对它做响度匹配并重新混入，构成明确的原唱回流。
+- 新增改词专用伴奏守卫：只有当 `other.wav` 近似原输入的缩放复制、主唱分轨同时占显著能量时才禁用该轨；正常独立伴奏回归样例保持不变。分离缓存加入守卫版本，最终混音缓存也已失效，旧坏成品不会再命中。
+- 同一请求真实重跑输出 `jingque_first_line_改词_toyokawa_sakiko_rvc_c05a5adc0d.wav`：5.520 秒/44.1 kHz/双声道，RMS `0.080353`、peak `0.589529`、SHA256 `b58c73a21a50b706bccdd9f3e696d0fda3bb811da0060c1ab154664a394b70f6`。守卫后伴奏峰值为 0；新成品与原输入的波形相关度由旧成品的 `0.487917` 降到 `-0.006659`，与转换后新歌词人声相关度为 `1.000000`。
+- `.venv\Scripts\python.exe -m pytest -q`：64 项全部通过；新增两项覆盖原唱缩放复制轨拦截与真实独立伴奏保留。
+
+## 2026-08-18 改词节奏失败审计
+
+- 用户复听确认整句 Vevo2 成品节奏错误。新增与音色无关的能量/起音包络比较；相同节奏但不同频率的合成样例得分大于 `0.90`，重排起音样例低于 `0.10`。
+- GAME 对原唱短句提取 19 个音符，起始约 `0.09s`；对整句 Vevo2 结果只提取 12 个音符，首个音符约 `1.23s`，且开头音高由原曲 `F4→G4→A#4` 变为 `D#4→F4→F4`。因此错误不只是总时长或线性偏移，不能靠 Rubber Band 整句校时修复。
+- 真实试验过 3 块和 7 块 GAME 时间窗约束的 Vevo2 分段生成。完整时间轴节奏得分分别约 `0.214`、`0.122`，相对整句 Vevo2 的 `0.203` 没有形成可靠改善；细分还引入接缝，因此该实验已从正式路径移除，相关输出不作为修复结果交付。
+- 当前 GAME + legacy DiffSinger 能按显式音符时值合成，但声学模型仍是旧 24 kHz OpenCpop checkpoint；Vevo2 声学质量较高但不是精确乐谱控制模型。当前本机后端无法同时满足“新歌词音质可接受”和“严格保留原旋律/节奏”，不宣称该缺陷已修复。
+- GUI 文案已移除“Vevo2 保留原唱旋律与节奏”的错误保证，明确标注参考韵律、节奏门控、legacy 回退及音质边界。`.venv\Scripts\python.exe -m pytest -q`：65 项全部通过。
+
+## 2026-08-18 VISinger2 后端更换复验
+
+- 自动改词主后端已更换为 ESPnet VISinger2：模型 `espnet/aceopencpop_svs_visinger2_40singer_pretrain` 固定 revision `8620f8f72df95d1d60dc3d7483f4da9acf8073be`，模型卡声明 CC BY 4.0；448,208,603 bytes 权重 SHA256 为 `4125552c2bbd45e21137dd016bf00e3c1f3ca335eb027e0fef49967c388ee171`。ESPnet 源码固定当前可获取的官方 commit `2d9a6c37c8eef710debc903d86132f1ad9a40c9f`（Apache 2.0）。模型卡记录的旧 ESPnet commit 已不可获取，因此未伪称按该死链固定；运行器只为旧序列化配置补齐当前解析器的默认字段。
+- 官方模型卡示例真实输出 `workspace/jobs/visinger2-smoke/official_example.wav`：1.799546 秒/44.1 kHz，RMS `0.052006`、peak `0.228250`，SHA256 `8edd4f765e5f7a54e53c4e0dd61d4dc95b53e5f670f932f50ec4430e5b0051c3`。项目 19 音符短句直接生成 `project_sample.wav`：4.957460 秒/44.1 kHz，目标乐谱跨度 4.970 秒，RMS `0.081195`、peak `0.272445`，SHA256 `a1afd97ca0a60d3f411ad6ee7df57f1a7aa6e388769c3f9fd470d95c0ccd8262`。
+- 同一《惊鹊》请求完整执行 GAME → VISinger2 → 丰川祥子 RVC → 混音，输出 `workspace/outputs/jingque_first_line_改词_toyokawa_sakiko_rvc_1f9a77fde0.wav`：5.520 秒/44.1 kHz，RMS `0.080178`、peak `0.494810`，SHA256 `1feaccc907d59868b6fbd22b82041c939f35c09230f49dbd05992c53f368c456`。最终成品与原输入波形相关度为 `0.029243`，没有把原唱重新混回去。
+- 用 GAME 对最终成品反向提取，得到与原曲目标相同的 19 个音符，音高序列逐项一致（开头 `F4→G4→A#4→A#4→C5`）；音符边界平均绝对误差 `0.16158s`、最大 `0.26s`。这证明新链路确实跟随显式乐谱，但不宣称逐采样或逐字边界完美。
+- 旧能量包络指标对更换歌词后的不同音素只得到 `0.074`，会把按谱合成误判为失败，因此现代按谱路径改用可读性、句长和反向音符验证；该包络门控只保留给不接受乐谱的 Vevo2。自动路径在 VISinger2 已就绪但推理失败时不会静默退回旧 DiffSinger。
+- `.venv\Scripts\python.exe -m pytest -q`：67 项全部通过；新增覆盖后端状态、中文音素/连音展开、自动优先路由和资源 marker。冻结完整包尚未重建，不能据此宣称旧 EXE 已包含新后端。
+
+## 2026-08-20 第一行跑调与吐字修复复验
+
+- 逐项检查确认旧映射按音符数量平均分字，会把“轻”压到约 `0.15s` 的单音并把后续音符移给错误汉字。现改为 Whisper 原唱逐字边界 + GAME 连续 F0 音符窗口映射；逐字对齐不匹配时停止，不再静默均分。
+- 同一修正乐谱对比 VISinger2、legacy DiffSinger、5 个 VISinger2 女声 ID、3 档 RVC protect、Sakiko DDSP 与多组频段混合。DiffSinger 原始段的 Whisper medium 结果为“青州渡过江南西越的天流徐漫长街”，首六字音同且边界稳定；因此自动优先级改为 DiffSinger，VISinger2 降为后备。
+- 修正乐谱的 DiffSinger 原始输出逐音符连续 F0 中位绝对误差约 `20` 音分，`90%` 可测音符在 `±50` 音分内。最终逐句 RVC 产品输出 `jingque_first_line_改词_toyokawa_sakiko_rvc_f634032416.wav` 为 `5.520s / 44.1kHz`，SHA256 `0f4147380872825716d9877b04e9632740cfd26069b5aa7719b58f88bd1aebd3`；最终 F0 中位绝对误差 `25` 音分，`90.5%` 音符在 `±50` 音分内。
+- 整轨 RVC 会把同一清晰短句从“青州渡过江南”退化为“青秋渡过青年”。现改为一次加载 RVC 模型、每个未校时短句分别转换后再校时拼接；最终首六字恢复为 Whisper 识别“青州渡过江南”。后半句仍会识别为“今夜的天流是难唱尽”，说明该 Sakiko RVC 权重对中文声母/韵母仍有可听边界，不宣称整句吐字已经完美。
+- 最终成品与原输入波形相关度为 `-0.023699`，伴奏守卫标记为 muted，没有把原唱或伪伴奏重新混回。源码完整测试 `70` 项通过；冻结 EXE 尚未重建。
+- 用户随后实际复听确认“柳絮满长街”仍然听感完全跑调。连续 F0 与 ASR 只能验证频率轨迹和近似音素，不能证明音符落字、声学重音和听感正确；因此该人耳结果否决“已修复”结论。另一次按音符起点重新分字的真实实验还导致前半句错位，已撤回且不进入正式路径。
+- 尚未完成第二首不同歌曲的端到端人工验收，也没有覆盖不同字数、快歌、说唱、密集转音、和声或非中文的测试矩阵。当前改词功能不宣称跨歌曲泛用；Sakiko RVC 对普通话的破坏是已知阻断项。
+
 ## 未通过/未执行
 
 - RVC 已有三套可再分发、带头像和真实试听的初始音色；DDSP 的 3～5 套公开初始音色仍未满足。祥子双模型仍只允许本机使用的保守判断。
-- 改词 Vevo2 主路径与无时间戳 Stable-ts/Whisper 强制对齐均已接入并真实通过；复杂歌声若句级校验失败会要求 LRC，不会回退成静默均分。
-- GAME + DiffSinger 中文回退已真实完成；旧版 OpenCpop demo 权重没有独立模型/数据许可，因此只在本机使用，不能进入公开包。非中文 G2P、音素级歌词对齐仍未实现。
+- 当前改词自动主路径为逐字对齐 + GAME/连续 F0 + legacy DiffSinger，VISinger2 为按谱后备。冻结完整包和公开发行包尚未重建验证；旧版 DiffSinger 权重许可仍不明确，因此不宣称可公开再分发。非中文 G2P 仍未实现。
 - Legacy CUDA 11.8 机器未获得实体旧显卡实测；“Legacy”目前只代表发行目标，不宣称兼容性已验收。
 - OOM 故障注入验证了 CUDA 错误分类、后端退出后的 30/15 秒有限分段重试与交叉淡化拼接；当前 12 GB 显卡未发生真实 OOM，因此不宣称已完成实体 4–8 GB 显卡压力测试。MSST 也没有许可/格式匹配的轻量替代 checkpoint 可自动切换。
 - 没有以 mock、输入复制、静音或随机音频代替任何上述未完成结果。

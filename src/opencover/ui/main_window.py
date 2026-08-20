@@ -18,12 +18,13 @@ from PySide6.QtWidgets import (
 )
 
 from opencover import __version__
-from opencover.adapters.backends import AlignmentAdapter, DDSPAdapter, DiffSingerLegacyAdapter, GameAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
+from opencover.adapters.backends import AlignmentAdapter, DDSPAdapter, DiffSingerLegacyAdapter, EspnetVisinger2Adapter, GameAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
 from opencover.adapters.base import BackendStatus
 from opencover.config import Settings
 from opencover.core.hardware_detector import HardwareInfo
 from opencover.core.job_manager import JobManager
 from opencover.audio.processing import ffmpeg_path
+from opencover.lyrics.midi import load_midi
 from opencover.lyrics.processing import decode_lyrics_file
 from opencover.models.importer import ModelImporter
 from opencover.models.registry import ModelRegistry
@@ -111,7 +112,7 @@ class HomePage(QWidget):
             f"{Path(str(job['input_path'])).name}  ·  {job['engine'].upper()}  ·  {str(job['created_at'])[:10]}"
             for job in jobs
         ) or "暂无已完成任务")
-        voices = self.registry.scan()[:3]
+        voices = self.registry.selectable()[:3]
         self.recommended.setText("\n".join(
             f"{model.display_name}  ·  {model.engine.upper()}  ·  {'可试听' if model.preview else '待生成试听'}"
             for model in voices
@@ -133,21 +134,27 @@ class CoverPage(QWidget):
         form = QGridLayout(controls); form.setContentsMargins(18, 16, 18, 16)
         self.engine = QComboBox(); self.engine.addItems(["RVC", "DDSP"])
         self.voice = QComboBox(); self.pitch = pitch_selector()
+        self.source_voice = QComboBox()
+        self.source_voice.addItem("自动检测（推荐）", "auto")
+        self.source_voice.addItem("男声原唱", "male")
+        self.source_voice.addItem("女声原唱", "female")
+        self.source_voice.setToolTip("用于自动匹配原唱与目标音色的音域；手动升降调时不会额外转调。")
         self.balance = QComboBox(); self.balance.addItems(["均衡", "人声更突出", "伴奏更突出"])
         self.output_format = QComboBox(); self.output_format.addItems(["WAV", "FLAC", "MP3"])
         self.output_format.setCurrentText(settings.output_format.upper())
         form.addWidget(QLabel("引擎"), 0, 0); form.addWidget(self.engine, 0, 1)
         form.addWidget(QLabel("音色"), 0, 2); form.addWidget(self.voice, 0, 3)
-        form.addWidget(QLabel("升降调"), 1, 0); form.addWidget(self.pitch, 1, 1)
-        form.addWidget(QLabel("混音"), 1, 2); form.addWidget(self.balance, 1, 3)
-        form.addWidget(QLabel("输出"), 2, 0); form.addWidget(self.output_format, 2, 1)
+        form.addWidget(QLabel("原唱声部"), 1, 0); form.addWidget(self.source_voice, 1, 1)
+        form.addWidget(QLabel("升降调"), 1, 2); form.addWidget(self.pitch, 1, 3)
+        form.addWidget(QLabel("混音"), 2, 0); form.addWidget(self.balance, 2, 1)
+        form.addWidget(QLabel("输出"), 2, 2); form.addWidget(self.output_format, 2, 3)
         self.import_button = QPushButton("导入音色"); self.start = QPushButton("开始翻唱"); self.start.setObjectName("Primary")
-        form.addWidget(self.import_button, 2, 2); form.addWidget(self.start, 2, 3)
+        form.addWidget(self.import_button, 3, 2); form.addWidget(self.start, 3, 3)
         self.engine.currentTextChanged.connect(self.refresh_models); self.import_button.clicked.connect(self.import_requested)
         self.start.clicked.connect(self._start); layout.addWidget(controls); layout.addStretch(); self.refresh_models()
 
     def refresh_models(self) -> None:
-        self.voice.clear(); models = self.registry.scan(self.engine.currentText().lower())
+        self.voice.clear(); models = self.registry.selectable(self.engine.currentText().lower())
         for model in models: self.voice.addItem(model.display_name, model.id)
         self.voice.setPlaceholderText("请先导入音色" if not models else "选择音色")
 
@@ -158,6 +165,7 @@ class CoverPage(QWidget):
         pitch = int(selected_pitch) if selected_pitch is not None else int(model.recommended_pitch if model else 0)
         self.start_requested.emit({"input_path": str(self.drop.path), "engine": self.engine.currentText().lower(),
             "model_id": self.voice.currentData(), "options": {"pitch": pitch, "pitch_mode": "auto" if selected_pitch is None else "manual",
+            "source_voice": self.source_voice.currentData(),
             "balance": self.balance.currentText(), "output_format": self.output_format.currentText().lower(),
             "memory_profile": self.settings.memory_profile}})
 
@@ -167,7 +175,7 @@ class LyricPage(QWidget):
     import_requested = Signal()
 
     def __init__(self, registry: ModelRegistry, paths: AppPaths, settings: Settings):
-        super().__init__(); self.registry = registry; self.paths = paths; self.settings = settings
+        super().__init__(); self.registry = registry; self.paths = paths; self.settings = settings; self.midi_path: Path | None = None
         page, layout = panel_layout("改词翻唱 Beta", "Beta：无时间戳原歌词会优先自动强制对齐；复杂歌声仍可改用带时间戳的 LRC。")
         QVBoxLayout(self).addWidget(page); self.drop = AudioDropArea(); layout.addWidget(self.drop)
         self.input_player = AudioPlayer(); layout.addWidget(self.input_player)
@@ -176,6 +184,8 @@ class LyricPage(QWidget):
         self.original = QTextEdit(); self.original.setPlaceholderText("粘贴原歌词，或导入 TXT/LRC"); self.original.setMaximumHeight(92)
         self.new = QTextEdit(); self.new.setPlaceholderText("粘贴新歌词，建议逐行对应原歌词"); self.new.setMaximumHeight(92)
         form.addRow("原歌词", self._lyric_editor(self.original)); form.addRow("新歌词", self._lyric_editor(self.new))
+        self.midi_file = QLineEdit(); self.midi_file.setReadOnly(True); self.midi_file.setPlaceholderText("可选；未上传时自动从原唱提取旋律")
+        form.addRow("旋律 MIDI（可选）", self._midi_picker())
         selectors = QWidget(); grid = QGridLayout(selectors); grid.setContentsMargins(0, 0, 0, 0)
         self.engine = QComboBox(); self.engine.addItems(["RVC", "DDSP"]); self.voice = QComboBox()
         self.strategy = QComboBox(); self.strategy.addItems(["均衡", "保守", "强制"])
@@ -188,15 +198,20 @@ class LyricPage(QWidget):
         for column, (label, widget) in enumerate((("升降调", self.pitch), ("混音", self.balance), ("输出", self.output_format))):
             grid.addWidget(QLabel(label), 1, column * 2); grid.addWidget(widget, 1, column * 2 + 1)
         form.addRow("生成设置", selectors)
+        score = EspnetVisinger2Adapter(paths.external_backends / "espnet_visinger2").status()
         status = Vevo2Adapter(paths.external_backends / "vevo2").status()
         fallback = [GameAdapter(paths.external_backends / "game").status(), DiffSingerLegacyAdapter(paths.external_backends / "diffsinger").status()]
-        ready = status.runnable or all(item.runnable for item in fallback)
-        if status.runnable:
-            detail = "Vevo2 已通过真实中文/日文推理；任务会先分离、分句，再生成和转换音色。"
+        ready = (score.runnable and fallback[0].runnable) or status.runnable or all(item.runnable for item in fallback)
+        self._default_generator_ready = ready
+        self._diffsinger_ready = score.runnable or fallback[1].runnable
+        if score.runnable and fallback[0].runnable:
+            detail = "默认使用 GAME + 44.1 kHz VISinger2，按提取出的音符音高和时值重新演唱；之后再由所选 RVC/DDSP 音色转换。"
+        elif status.runnable:
+            detail = "VISinger2 未就绪；Vevo2 可生成歌声，但不保证逐音符复刻原曲。"
         elif ready:
-            detail = "Vevo2 未就绪；将自动使用已实测的 GAME + DiffSinger 中文回退链。"
+            detail = "现代乐谱模型未就绪；只能使用 GAME + legacy DiffSinger，音质会受限。"
         else:
-            detail = "Vevo2 与 GAME + DiffSinger 回退链均未就绪，请先到组件管理检查。"
+            detail = "VISinger2、Vevo2 与 legacy DiffSinger 均未就绪，请先到组件管理检查。"
         self.note = QLabel(detail)
         self.note.setWordWrap(True); self.note.setObjectName("Muted"); form.addRow("当前状态", self.note)
         actions = QWidget(); row = QHBoxLayout(actions); row.setContentsMargins(0, 0, 0, 0)
@@ -218,9 +233,42 @@ class LyricPage(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "歌词导入失败", str(exc))
 
+    def _midi_picker(self) -> QWidget:
+        box = QWidget(); row = QHBoxLayout(box); row.setContentsMargins(0, 0, 0, 0)
+        choose = QPushButton("上传 MIDI"); clear = QPushButton("清除")
+        choose.clicked.connect(self._load_midi); clear.clicked.connect(self._clear_midi)
+        row.addWidget(self.midi_file, 1); row.addWidget(choose); row.addWidget(clear)
+        return box
+
+    def _load_midi(self) -> None:
+        filename, _ = QFileDialog.getOpenFileName(self, "上传旋律 MIDI", "", "MIDI 文件 (*.mid *.midi)")
+        if not filename:
+            return
+        path = Path(filename)
+        try:
+            midi = load_midi(path)
+        except ValueError as exc:
+            QMessageBox.critical(self, "MIDI 导入失败", str(exc))
+            return
+        self.midi_path = path
+        self.midi_file.setText(str(path))
+        self.midi_file.setToolTip(str(path))
+        self.start.setEnabled(self._diffsinger_ready)
+        self.note.setText(
+            f"已读取 MIDI：{midi.track_count} 条轨道、{midi.note_count} 个音符、约 {midi.duration:.1f} 秒。"
+            + ("生成时会自动选择主旋律轨道并与 LRC 时间轴对齐，再交给 VISinger2 乐谱合成；不会再用 GAME 猜音高。" if self._diffsinger_ready
+               else "文件有效，但 VISinger2/legacy DiffSinger 尚未就绪，请先到组件管理修复。")
+        )
+
+    def _clear_midi(self) -> None:
+        self.midi_path = None
+        self.midi_file.clear(); self.midi_file.setToolTip("")
+        self.start.setEnabled(self._default_generator_ready)
+        self.note.setText("未上传 MIDI：默认由 GAME 提取原唱音符，再用 VISinger2 按音高和时值重新演唱；自动提取仍可能出现个别音符边界误差。")
+
     def refresh_models(self) -> None:
         current = self.voice.currentData(); self.voice.clear()
-        models = self.registry.scan(self.engine.currentText().lower())
+        models = self.registry.selectable(self.engine.currentText().lower())
         for model in models:
             self.voice.addItem(model.display_name, model.id)
         index = self.voice.findData(current)
@@ -238,13 +286,25 @@ class LyricPage(QWidget):
         if not self.original.toPlainText().strip() or not self.new.toPlainText().strip():
             QMessageBox.warning(self, "缺少歌词", "请填写原歌词和新歌词。")
             return
+        if self.midi_path is not None:
+            try:
+                load_midi(self.midi_path)
+            except ValueError as exc:
+                QMessageBox.warning(self, "MIDI 无效", str(exc))
+                return
+            score = EspnetVisinger2Adapter(self.paths.external_backends / "espnet_visinger2").status()
+            legacy = DiffSingerLegacyAdapter(self.paths.external_backends / "diffsinger").status()
+            if not score.runnable and not legacy.runnable:
+                QMessageBox.warning(self, "乐谱模型不可用", "上传 MIDI 后需要 VISinger2 或 legacy DiffSinger：" + score.detail)
+                return
         model = self.registry.get(str(self.voice.currentData())); selected_pitch = self.pitch.currentData()
         pitch = int(selected_pitch) if selected_pitch is not None else int(model.recommended_pitch if model else 0)
         self.start_requested.emit({
             "input_path": str(self.drop.path), "engine": self.engine.currentText().lower(), "model_id": self.voice.currentData(),
             "options": {"original_lyrics": self.original.toPlainText(), "new_lyrics": self.new.toPlainText(),
             "strategy": self.strategy.currentText(), "pitch": pitch, "pitch_mode": "auto" if selected_pitch is None else "manual", "balance": self.balance.currentText(),
-            "output_format": self.output_format.currentText().lower(), "memory_profile": self.settings.memory_profile},
+            "output_format": self.output_format.currentText().lower(), "memory_profile": self.settings.memory_profile,
+            "midi_path": str(self.midi_path) if self.midi_path is not None else ""},
         })
 
 
@@ -257,10 +317,11 @@ class ImportVoiceDialog(QDialog):
         form = QFormLayout(self); self.engine = QComboBox(); self.engine.addItems(["RVC", "DDSP"])
         self.weight = QLineEdit(); self.extra = QLineEdit(); self.name = QLineEdit(); self.description = QLineEdit()
         self.avatar = QLineEdit(); self.preview = QLineEdit(); self.preview_mode = QComboBox()
+        self.voice_gender = QComboBox(); self.voice_gender.addItem("未知 / 通用", "unknown"); self.voice_gender.addItem("女声音色", "female"); self.voice_gender.addItem("男声音色", "male")
         self.preview_mode.addItem("自动生成（推荐）", "auto"); self.preview_mode.addItem("上传试听音频", "upload"); self.preview_mode.addItem("暂不生成", "none")
         form.addRow("引擎", self.engine); form.addRow("模型权重", self._picker(self.weight, "权重 (*.pth *.pt *.ckpt)"))
         form.addRow("索引 / 配置", self._picker(self.extra, "RVC 索引或 DDSP 配置 (*.index *.yaml *.yml)"))
-        form.addRow("名称", self.name); form.addRow("简介", self.description)
+        form.addRow("名称", self.name); form.addRow("简介", self.description); form.addRow("音色声部", self.voice_gender)
         form.addRow("头像（可选）", self._picker(self.avatar, "图片 (*.png *.jpg *.jpeg *.webp)"))
         form.addRow("试听方式", self.preview_mode); self.preview_picker = self._picker(self.preview, "音频 (*.wav *.flac *.mp3 *.m4a)"); form.addRow("试听音频", self.preview_picker)
         hint = QLabel("自动生成会在导入后提交独立真实推理任务；暂不生成时卡片显示“生成试听”。标准干声不会直接冒充音色试听。")
@@ -290,7 +351,8 @@ class ImportVoiceDialog(QDialog):
             if mode == "upload" and not self.preview.text().strip(): raise ValueError("请选择要上传的试听音频")
             model = self.importer.import_model(engine=self.engine.currentText().lower(), weight=Path(self.weight.text()),
                 display_name=self.name.text(), description=self.description.text(), index_or_config=opt(self.extra),
-                avatar=opt(self.avatar), preview=opt(self.preview) if mode == "upload" else None)
+                avatar=opt(self.avatar), preview=opt(self.preview) if mode == "upload" else None,
+                voice_gender=str(self.voice_gender.currentData()))
         except Exception as exc: QMessageBox.critical(self, "导入失败", str(exc)); return
         self.imported.emit()
         if mode == "auto" and not model.preview:
@@ -306,9 +368,10 @@ class EditVoiceDialog(QDialog):
         super().__init__(parent); self.importer = importer; self.model = model; self.setWindowTitle(f"管理音色 · {model.display_name}"); self.resize(560, 430)
         self.directory = model.directory(importer.weights_root); form = QFormLayout(self)
         self.name = QLineEdit(model.display_name); self.description = QLineEdit(model.description); self.pitch = QSpinBox(); self.pitch.setRange(-12, 12); self.pitch.setValue(model.recommended_pitch)
+        self.voice_gender = QComboBox(); self.voice_gender.addItem("未知 / 通用", "unknown"); self.voice_gender.addItem("女声音色", "female"); self.voice_gender.addItem("男声音色", "male"); self.voice_gender.setCurrentIndex(max(0, self.voice_gender.findData(model.voice_gender)))
         self.languages = QLineEdit(", ".join(model.languages)); self.avatar = QLineEdit(); self.preview = QLineEdit(); self.remove_preview = QCheckBox("删除现有试听并自动重新生成")
         self.featured = QCheckBox("置顶此音色"); self.featured.setChecked(model.featured)
-        form.addRow("名称", self.name); form.addRow("简介", self.description); form.addRow("推荐升降调", self.pitch); form.addRow("适合语言", self.languages)
+        form.addRow("名称", self.name); form.addRow("简介", self.description); form.addRow("音色声部", self.voice_gender); form.addRow("推荐升降调", self.pitch); form.addRow("适合语言", self.languages)
         form.addRow("更换头像", self._picker(self.avatar, "图片 (*.png *.jpg *.jpeg *.webp)")); form.addRow("更换试听", self._picker(self.preview, "音频 (*.wav *.flac *.mp3 *.m4a)")); form.addRow("", self.remove_preview); form.addRow("", self.featured)
         tools = QWidget(); row = QHBoxLayout(tools); row.setContentsMargins(0, 0, 0, 0); open_dir = QPushButton("打开模型目录"); delete = QPushButton("删除用户模型"); delete.setEnabled(not model.bundled)
         open_dir.clicked.connect(lambda: QDesktopServices.openUrl(self.directory.as_uri())); delete.clicked.connect(self._delete); row.addWidget(open_dir); row.addWidget(delete); row.addStretch(); form.addRow("", tools)
@@ -327,6 +390,7 @@ class EditVoiceDialog(QDialog):
         try:
             updated = self.importer.update_model(
                 self.model.id, display_name=self.name.text(), description=self.description.text(), recommended_pitch=self.pitch.value(),
+                voice_gender=str(self.voice_gender.currentData()),
                 languages=[item for item in self.languages.text().replace("，", ",").split(",")],
                 avatar=Path(self.avatar.text()) if self.avatar.text().strip() else None,
                 preview=Path(self.preview.text()) if self.preview.text().strip() else None,
@@ -384,7 +448,7 @@ class VoiceManagerPage(QWidget):
             if not needle or "丰川祥子" in needle or "祥子" in needle:
                 pending = QFrame(); pending.setObjectName("Panel"); row = QHBoxLayout(pending)
                 avatar = QLabel(); avatar.setFixedSize(72, 72)
-                avatar_path = self.registry.weights_root.parent / "assets" / "祥子音色头像.jpg"
+                avatar_path = self.registry.weights_root.parent / "assets" / "祥子音色图标.jpg"
                 if avatar_path.is_file():
                     avatar.setPixmap(QPixmap(str(avatar_path)).scaled(72, 72, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
                 text = QVBoxLayout(); title = QLabel("丰川祥子"); title.setObjectName("CardTitle")
@@ -489,7 +553,7 @@ class HistoryPage(QWidget):
         if not job or job.get("kind") not in {"original", "lyric", "preview"}:
             QMessageBox.information(self, "无法更换音色", "请选择原词、改词或试听任务。")
             return
-        models = self.registry.scan(str(job["engine"]))
+            models = self.registry.selectable(str(job["engine"]))
         if not models:
             QMessageBox.warning(self, "没有可用音色", "当前引擎没有已导入且有效的音色。")
             return
@@ -523,7 +587,17 @@ class HistoryPage(QWidget):
             raise RuntimeError("缓存目录越界")
         if QMessageBox.question(self, "清理缓存", "将删除分离与推理缓存，但保留模型、任务记录和输出。是否继续？") != QMessageBox.StandardButton.Yes:
             return
-        shutil.rmtree(cache, ignore_errors=True); cache.mkdir(parents=True, exist_ok=True)
+        cache.mkdir(parents=True, exist_ok=True)
+        # Older local installations may keep uv's base interpreter here. Backend
+        # virtual environments depend on it, so deleting the whole cache makes
+        # every launcher look installed while it can no longer start Python.
+        for child in cache.iterdir():
+            if child.name.casefold() == "uv-python":
+                continue
+            if child.is_symlink() or child.is_file():
+                child.unlink(missing_ok=True)
+            elif child.is_dir():
+                shutil.rmtree(child)
         QMessageBox.information(self, "缓存已清理", "下次任务将重新执行分离和推理。")
 
     def _export(self) -> None:
@@ -645,6 +719,7 @@ class ComponentPage(QWidget):
         statuses = [BackendStatus("ffmpeg", "FFmpeg", bool(ffmpeg), bool(ffmpeg), str(ffmpeg or "未安装"), "本地可执行文件已找到" if ffmpeg else "基础音频运行时缺失")]
         statuses += [MSSTAdapter(self.paths.external_backends / "msst").status(), RVCAdapter(self.paths.external_backends / "rvc").status(), DDSPAdapter(self.paths.external_backends / "ddsp").status()]
         statuses += [
+            EspnetVisinger2Adapter(self.paths.external_backends / "espnet_visinger2").status(),
             Vevo2Adapter(self.paths.external_backends / "vevo2").status(),
             GameAdapter(self.paths.external_backends / "game").status(),
             DiffSingerLegacyAdapter(self.paths.external_backends / "diffsinger").status(),
@@ -677,7 +752,11 @@ class MainWindow(QMainWindow):
     def __init__(self, paths: AppPaths, settings: Settings, hardware: HardwareInfo, database: Database):
         super().__init__(); self.paths = paths; self.app_settings = settings; self.hardware = hardware; self.database = database
         self.registry = ModelRegistry(paths.weights); self.importer = ModelImporter(paths.weights, ffmpeg_path(paths.root)); self.jobs = JobManager(database, paths.root, self)
-        self.setWindowTitle("OpenCover Studio"); self.setMinimumSize(900, 620); self.resize(settings.window_width, settings.window_height)
+        self.setWindowTitle("OpenCover Studio")
+        icon_path = paths.assets / "图标.jpg"
+        if icon_path.is_file():
+            self.setWindowIcon(QIcon(str(icon_path)))
+        self.setMinimumSize(900, 620); self.resize(settings.window_width, settings.window_height)
         root = QWidget(); root.setObjectName("Root"); self.setCentralWidget(root); shell = QHBoxLayout(root); shell.setContentsMargins(0, 0, 0, 0); shell.setSpacing(0)
         sidebar = QFrame(); sidebar.setObjectName("Sidebar"); sidebar.setFixedWidth(204); nav = QVBoxLayout(sidebar); nav.setContentsMargins(0, 0, 0, 0)
         brand = QLabel("OpenCover\nStudio"); brand.setObjectName("Brand"); nav.addWidget(brand); self.nav_buttons: dict[str, QPushButton] = {}
@@ -697,7 +776,7 @@ class MainWindow(QMainWindow):
         self.stack.setObjectName("BackgroundStack")
         self.stack.setStyleSheet(
             f"QStackedWidget#BackgroundStack {{ border-image: url('{url}') 0 0 0 0 stretch stretch; }}"
-            " QWidget#ContentPage { background-color: rgba(248, 249, 247, 232); }"
+            " QWidget#ContentPage { background-color: rgba(248, 249, 247, 174); }"
         )
 
     def _add_pages(self) -> None:
@@ -787,11 +866,16 @@ class MainWindow(QMainWindow):
         model = self.registry.get(str(payload["model_id"])); missing = []
         if model is None:
             missing.append("音色不存在")
+        options = payload.get("options", {})
+        has_midi = isinstance(options, dict) and bool(str(options.get("midi_path", "")).strip())
         statuses = [MSSTAdapter(self.paths.external_backends / "msst").status()]
         vevo = Vevo2Adapter(self.paths.external_backends / "vevo2").status()
+        score = EspnetVisinger2Adapter(self.paths.external_backends / "espnet_visinger2").status()
         fallback = [GameAdapter(self.paths.external_backends / "game").status(), DiffSingerLegacyAdapter(self.paths.external_backends / "diffsinger").status()]
-        if not vevo.runnable and not all(item.runnable for item in fallback):
-            missing.append("Vevo2 与 GAME + DiffSinger fallback 均未就绪")
+        if has_midi and not score.runnable and not fallback[1].runnable:
+            missing.append("上传 MIDI 后需要 VISinger2 或 legacy DiffSinger 乐谱合成组件")
+        elif not has_midi and not (score.runnable and fallback[0].runnable) and not vevo.runnable and not all(item.runnable for item in fallback):
+            missing.append("VISinger2、Vevo2 与 legacy DiffSinger 均未就绪")
         statuses.append((RVCAdapter(self.paths.external_backends / "rvc") if payload["engine"] == "rvc" else DDSPAdapter(self.paths.external_backends / "ddsp")).status())
         missing.extend(item.detail for item in statuses if not item.runnable)
         if not self.hardware.ffmpeg:
@@ -800,7 +884,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "改词组件尚未就绪", "无法开始真实推理：\n\n" + "\n".join(f"• {item}" for item in missing))
             return
         payload["root"] = str(self.paths.root)
-        job_id = self.jobs.submit_lyric(payload)
+        try:
+            job_id = self.jobs.submit_lyric(payload)
+        except Exception as exc:
+            QMessageBox.critical(self, "无法创建改词任务", str(exc))
+            return
         QMessageBox.information(self, "改词任务已创建", f"任务 {job_id[:8]} 已在独立进程启动。")
         self.navigate("任务记录")
 
@@ -837,7 +925,10 @@ class MainWindow(QMainWindow):
         self.tray_status_action.setText(label)
 
     def _tray(self) -> None:
-        self.tray = QSystemTrayIcon(self); self.tray.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_MediaVolume)); menu = self.tray.contextMenu() or None
+        self.tray = QSystemTrayIcon(self)
+        tray_icon = self.windowIcon()
+        self.tray.setIcon(tray_icon if not tray_icon.isNull() else self.style().standardIcon(self.style().StandardPixmap.SP_MediaVolume))
+        menu = self.tray.contextMenu() or None
         from PySide6.QtWidgets import QMenu
         menu = QMenu(); self.tray_status_action = QAction("当前无任务", self); self.tray_status_action.setEnabled(False); show = QAction("打开 OpenCover Studio", self); show.triggered.connect(self.showNormal); output = QAction("打开输出目录", self); output.triggered.connect(lambda: QDesktopServices.openUrl(self.paths.workspace.joinpath("outputs").as_uri())); cancel = QAction("取消全部任务", self); cancel.triggered.connect(lambda: [self.jobs.cancel(job_id) for job_id in list(self.jobs.processes)]); quit_action = QAction("退出", self); quit_action.triggered.connect(QApplication.quit); menu.addActions([self.tray_status_action, show, output, cancel, quit_action]); self.tray.setContextMenu(menu); self.tray.activated.connect(lambda reason: self.showNormal() if reason == QSystemTrayIcon.ActivationReason.DoubleClick else None); self.tray.show()
         if self.jobs.recovered_jobs:

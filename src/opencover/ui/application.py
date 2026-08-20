@@ -4,6 +4,7 @@ import os
 import sys
 
 from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from opencover.config import Settings
@@ -23,6 +24,9 @@ def main() -> int:
     app.setQuitOnLastWindowClosed(True)
     app.setStyle("Fusion"); app.setStyleSheet(APP_QSS)
     paths = AppPaths.discover(); paths.ensure(); configure_logging(paths.workspace / "logs")
+    icon_path = paths.assets / "图标.jpg"
+    if icon_path.is_file():
+        app.setWindowIcon(QIcon(str(icon_path)))
     settings = Settings.load(paths.workspace / "settings.json")
     local_ffmpeg = paths.ffmpeg / "bin" / "ffmpeg.exe"
     if not local_ffmpeg.exists():
