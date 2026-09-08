@@ -291,7 +291,7 @@ def compare_vocal_rhythm(source_path: Path, candidate_path: Path, *, points: int
     return RhythmComparison(score, envelope_correlation, onset_correlation, reliable)
 
 
-def mix_tracks(vocal_path: Path, accompaniment_path: Path, output: Path, balance: str = "均衡") -> Path:
+def mix_tracks(vocal_path: Path, accompaniment_path: Path, output: Path, balance: str = "均衡", *, gain_report: dict | None = None) -> Path:
     vocal, sr_v = sf.read(vocal_path, always_2d=True, dtype="float32")
     accompaniment, sr_a = sf.read(accompaniment_path, always_2d=True, dtype="float32")
     if sr_v != sr_a:
@@ -307,19 +307,26 @@ def mix_tracks(vocal_path: Path, accompaniment_path: Path, output: Path, balance
     gains = {"人声更突出": (1.0, 0.70), "均衡": (0.92, 0.82), "伴奏更突出": (0.72, 1.0)}
     vocal_gain, accompaniment_gain = gains.get(balance, gains["均衡"])
     meter = pyln.Meter(sr_v)
+    vocal_normalization = accompaniment_normalization = 1.0
     try:
         vocal_lufs = meter.integrated_loudness(vocal)
         accompaniment_lufs = meter.integrated_loudness(accompaniment)
         if np.isfinite(vocal_lufs):
-            vocal *= 10.0 ** ((-18.0 - vocal_lufs) / 20.0)
+            vocal_normalization = 10.0 ** ((-18.0 - vocal_lufs) / 20.0)
+            vocal *= vocal_normalization
         if np.isfinite(accompaniment_lufs):
-            accompaniment *= 10.0 ** ((-20.0 - accompaniment_lufs) / 20.0)
+            accompaniment_normalization = 10.0 ** ((-20.0 - accompaniment_lufs) / 20.0)
+            accompaniment *= accompaniment_normalization
     except (ValueError, OverflowError):
         pass
     mixed = vocal * vocal_gain + accompaniment * accompaniment_gain
     peak = float(np.max(np.abs(mixed))) if mixed.size else 0.0
     if peak > 0.98:
         mixed *= 0.98 / peak
+    if gain_report is not None:
+        limiter = min(1.0, 0.98 / max(peak, 1e-12))
+        gain_report.update(vocal_gain=vocal_gain * vocal_normalization * limiter,
+                           accompaniment_gain=accompaniment_gain * accompaniment_normalization * limiter)
     output.parent.mkdir(parents=True, exist_ok=True)
     sf.write(output, mixed, sr_v, subtype="PCM_24")
     validate_audio(output)

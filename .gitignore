@@ -8,6 +8,7 @@ runtimes/
 weights/
 release_private/
 workspace/
+docs/BILIBILI_VIDEO_HANDOFF.md
 .venv/
 .uv-cache*/
 build/
@@ -22,3 +23,6 @@ __pycache__/
 .pytest_cache/
 *.spec
 *.egg-info/
+/OpenCoverStudio.exe
+/OpenCoverStudioWorker.exe
+/_opencover_runtime/

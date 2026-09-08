@@ -19,7 +19,7 @@ def main(request_file: str) -> int:
         data = json.loads(Path(request_file).read_text(encoding="utf-8"))
         root = Path(data["root"]).resolve()
         voice = ModelRegistry(root / "weights").get(str(data["model_id"]))
-        if voice is None:
+        if voice is None and data.get("engine") != "native":
             raise RuntimeError("找不到所选音色")
         options = data.get("options", {})
         request = LyricCoverRequest(
@@ -27,9 +27,9 @@ def main(request_file: str) -> int:
             original_lyrics=str(options.get("original_lyrics", "")), new_lyrics=str(options.get("new_lyrics", "")),
             strategy=str(options.get("strategy", "均衡")), pitch=int(options.get("pitch", 0)),
             balance=str(options.get("balance", "均衡")), output_format=str(options.get("output_format", "wav")),
-            generator=str(options.get("generator", "auto")),
+            generator=str(options.get("generator", "diffsinger")),
             memory_profile=str(options.get("memory_profile", "标准")),
-            midi_path=Path(str(options["midi_path"])) if str(options.get("midi_path", "")).strip() else None,
+            auto_recognize_lyrics=bool(options.get("auto_recognize_lyrics", False)),
         )
         emit("status", message="正在检查改词组件")
         pipeline = LyricCoverPipeline(root)

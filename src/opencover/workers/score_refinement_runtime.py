@@ -12,6 +12,12 @@ import numpy as np
 _NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
 
+def mask_unreliable_f0(f0, probability, rms):
+    """Quiet separator artifacts can have stable pitch without being singing."""
+    threshold=max(1e-5,min(10**(-55/20),float(np.percentile(rms,95))*.01))
+    return np.where((probability>=.5)&(rms>=threshold),f0,np.nan)
+
+
 def midi_note_name(value: int) -> str:
     value = max(1, min(127, int(value)))
     return f"{_NOTE_NAMES[value % 12]}{value // 12 - 1}"
@@ -84,7 +90,31 @@ def refine_events(
             refined.append((start, end, original_note))
             continue
         refined.extend((run_start, run_end, midi_note_name(value)) for run_start, run_end, value in runs)
-    return refined
+    # GAME can omit a quiet pickup syllable entirely. Refining only its existing
+    # notes can never recover that syllable. Recover sustained, voiced F0 runs
+    # in uncovered gaps, leaving silence and short consonant tracks untouched.
+    covered = np.zeros(len(times), dtype=bool)
+    for start, end, _ in events:
+        covered |= (times >= start) & (times <= end)
+    missing = np.flatnonzero(finite & ~covered)
+    hop = float(np.median(np.diff(times))) if len(times) > 1 else .01
+    groups = np.split(missing, np.flatnonzero(np.diff(missing) > 1) + 1)
+    for group in groups:
+        if len(group) < 5:
+            continue
+        start, end = max(0.0, float(times[group[0]])-hop/2), float(times[group[-1]])+hop/2
+        for left, right, _ in events:
+            if right <= times[group[0]]:
+                start = max(start, right)
+            if left >= times[group[-1]]:
+                end = min(end, left)
+        if end-start < .065:
+            continue
+        midi = 69.0 + 12.0*np.log2(f0[group]/440.0)
+        if float(np.percentile(midi, 90)-np.percentile(midi, 10)) > 1.5:
+            continue
+        refined.append((start, end, midi_note_name(int(round(float(np.median(midi)))))))
+    return sorted(refined)
 
 
 def _read_events(path: Path) -> list[tuple[float, float, str]]:
@@ -112,12 +142,15 @@ def main(request_file: str) -> int:
         audio_file = source_dir / f"{note_file.stem}.wav"
         audio, sample_rate = librosa.load(audio_file, sr=22050, mono=True)
         hop_length = 256
-        f0, _, _ = librosa.pyin(
+        f0, _, voiced_probability = librosa.pyin(
             audio, fmin=librosa.note_to_hz("C2"), fmax=librosa.note_to_hz("C7"),
             sr=sample_rate, frame_length=2048, hop_length=hop_length,
         )
         times = librosa.times_like(f0, sr=sample_rate, hop_length=hop_length)
+        rms=librosa.feature.rms(y=audio,frame_length=2048,hop_length=hop_length)[0]
+        f0 = mask_unreliable_f0(f0,voiced_probability,rms[:len(f0)])
         refined = refine_events(_read_events(note_file), times, f0)
+        refined = [(a, min(b, len(audio)/sample_rate), note) for a,b,note in refined if a < len(audio)/sample_rate]
         if not refined:
             raise RuntimeError(f"连续 F0 复核没有为 {note_file.name} 产生音符")
         target = output_dir / note_file.name

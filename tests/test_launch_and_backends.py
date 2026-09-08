@@ -38,15 +38,26 @@ def test_rvc_adapter_uses_real_cli_module(tmp_path: Path, monkeypatch) -> None:
     python.parent.mkdir(parents=True)
     python.write_bytes(b"python")
     (root / "source").mkdir()
+    (root / "models").mkdir()
+    (root / "models" / "hubert_base.pt").write_bytes(b"hubert")
+    (root / "models" / "rmvpe.pt").write_bytes(b"rmvpe")
+    (root / ".env").write_text(
+        "hubert_path=E:/stale/build/machine/hubert_base.pt\n",
+        encoding="utf-8",
+    )
     (root / "backend.json").write_text(
         json.dumps({"smoke_test_passed": True, "commit": "verified"}),
         encoding="utf-8",
     )
     output = tmp_path / "out.wav"
-    calls: list[tuple[list[str], Path]] = []
+    calls: list[tuple[list[str], Path, dict[str, str]]] = []
 
-    def fake_run(args: list[str], cwd: Path) -> None:
-        calls.append((args, cwd))
+    def fake_run(
+        args: list[str], cwd: Path, timeout: int = 3600,
+        env: dict[str, str] | None = None,
+    ) -> None:
+        assert env is not None
+        calls.append((args, cwd, env))
         output.write_bytes(b"RIFF" + b"\0" * 2048)
 
     monkeypatch.setattr(backends, "run_checked", fake_run)
@@ -55,6 +66,9 @@ def test_rvc_adapter_uses_real_cli_module(tmp_path: Path, monkeypatch) -> None:
 
     assert calls[0][0][1:4] == ["-m", "rvc.wrapper.cli.cli", "infer"]
     assert calls[0][1] == root
+    assert calls[0][2]["hubert_path"] == str((root / "models" / "hubert_base.pt").resolve())
+    assert calls[0][2]["rmvpe_root"] == str((root / "models").resolve())
+    assert "stale" not in calls[0][2]["hubert_path"]
 
 
 def test_backend_error_includes_captured_stderr(tmp_path: Path) -> None:

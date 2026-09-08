@@ -13,7 +13,6 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 
 from opencover.storage.database import Database
-from opencover.lyrics.midi import load_midi
 from opencover.models.registry import ModelRegistry
 from opencover.adapters.base import _decode_output
 from .worker_protocol import WorkerEvent
@@ -22,21 +21,37 @@ LOG = logging.getLogger(__name__)
 
 
 def snapshot_lyric_midi(record: dict[str, object], job_dir: Path) -> dict[str, object]:
-    """Copy an uploaded score into the immutable job directory."""
+    """Preserve score attachments when importing historical task records."""
     if record.get("kind") != "lyric" or not isinstance(record.get("options"), dict):
         return record
     options = dict(record["options"])
-    midi_value = str(options.get("midi_path", "")).strip()
-    if not midi_value:
-        return record
-    source_midi = Path(midi_value)
-    if not source_midi.is_file():
-        raise FileNotFoundError("MIDI 文件已被移动或删除，请重新上传")
-    load_midi(source_midi)
-    target_midi = job_dir / ("melody" + source_midi.suffix.lower())
-    shutil.copy2(source_midi, target_midi)
-    options["midi_path"] = str(target_midi)
-    options["midi_original_name"] = source_midi.name
+    if options.get("midi_path"):
+        from opencover.lyrics.midi import load_midi
+        source = Path(str(options["midi_path"]))
+        load_midi(source)
+        target = job_dir / "melody.mid"
+        shutil.copy2(source, target)
+        options.update(midi_path=str(target), midi_original_name=source.name)
+    for key, target_name in (
+        ("soulx_prompt_metadata_path", "soulx_prompt.json"),
+        ("soulx_target_metadata_path", "soulx_target.json"),
+    ):
+        value = str(options.get(key, "")).strip()
+        if not value:
+            continue
+        source = Path(value)
+        if not source.is_file():
+            raise FileNotFoundError(f"SoulX metadata 已被移动或删除：{source.name}")
+        if source.stat().st_size > 2 * 1024 * 1024:
+            raise ValueError("SoulX metadata 不能超过 2 MiB")
+        try:
+            json.loads(source.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"SoulX metadata 不是有效的 UTF-8 JSON：{source.name}") from exc
+        target = job_dir / target_name
+        shutil.copy2(source, target)
+        options[key] = str(target)
+        options[key.replace("_path", "_original_name")] = source.name
     return {**record, "options": options}
 
 
@@ -81,9 +96,26 @@ class JobManager(QObject):
         return self._submit(record, "opencover.workers.preview_worker")
 
     def submit_lyric(self, payload: dict[str, object]) -> str:
+        options = payload.get("options", {})
+        if not isinstance(options, dict) or options.get("generator", "diffsinger") != "diffsinger":
+            raise ValueError("当前改词翻唱只支持 GAME + DiffSinger，请重新创建历史任务")
+        if any(options.get(key) for key in ("midi_path", "soulx_prompt_metadata_path", "soulx_target_metadata_path")):
+            raise ValueError("词谱由后台自动生成，请只提供音频和新旧歌词")
+        payload = {**payload, "options": {**options, "generator": "diffsinger"}}
         job_id = uuid.uuid4().hex
         record = {"id": job_id, "kind": "lyric", **payload}
         return self._submit(record, "opencover.workers.lyric_cover_worker")
+
+    def submit_lyric_recognition(self, input_path: str) -> str:
+        job_id = uuid.uuid4().hex
+        record = {
+            "id": job_id, "kind": "lyric_recognition", "root": str(self.root),
+            "input_path": input_path, "engine": "vocalparse", "model_id": "vocalparse",
+            "options": {},
+        }
+        return self._submit(
+            record, "opencover.workers.lyric_recognition_worker",
+        )
 
     def submit_resource(self, resource_id: str, *, install: bool = True) -> str:
         job_id = uuid.uuid4().hex
@@ -120,6 +152,10 @@ class JobManager(QObject):
         environment = QProcessEnvironment.systemEnvironment()
         source_dir = str(self.root / "src")
         environment.insert("PYTHONPATH", source_dir + os.pathsep + environment.value("PYTHONPATH"))
+        process_temp = self.root / "workspace" / "tmp" / "worker_processes"
+        process_temp.mkdir(parents=True, exist_ok=True)
+        environment.insert("TEMP", str(process_temp))
+        environment.insert("TMP", str(process_temp))
         process.setProcessEnvironment(environment)
         process.readyReadStandardOutput.connect(lambda jid=job_id: self._read(jid))
         process.readyReadStandardError.connect(lambda jid=job_id: self._read_error(jid))

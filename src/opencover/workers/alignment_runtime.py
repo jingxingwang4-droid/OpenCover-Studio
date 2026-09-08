@@ -37,12 +37,53 @@ def _align_one(model, audio: Path, text: str, language: str) -> dict[str, object
     return data
 
 
+def _transcribe_one(model, audio: Path, language: str) -> dict[str, object]:
+    """Transcribe isolated singing and keep Stable-ts word timestamps."""
+    result = model.transcribe(
+        str(audio), language=language, task="transcribe", word_timestamps=True,
+        regroup=True, suppress_silence=True, temperature=0, verbose=None,
+    )
+    if result is None:
+        raise RuntimeError("Whisper 没有产生歌词识别结果")
+    data = result.to_dict()
+    segments = data.get("segments") or []
+    if not isinstance(segments, list) or not segments:
+        raise RuntimeError("Whisper 没有识别到有效演唱片段")
+    last_start = -1.0
+    timed_words = 0
+    for segment in segments:
+        try:
+            start, end = float(segment["start"]), float(segment["end"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Whisper 歌词识别结果缺少有效时间") from exc
+        if start < 0 or end <= start or start <= last_start:
+            raise RuntimeError("Whisper 歌词识别时间不是严格递增的有效区间")
+        last_start = start
+        words = segment.get("words") or []
+        if isinstance(words, list):
+            timed_words += sum(
+                isinstance(word, dict)
+                and isinstance(word.get("start"), (int, float))
+                and isinstance(word.get("end"), (int, float))
+                and float(word["end"]) > float(word["start"])
+                for word in words
+            )
+    if timed_words == 0:
+        raise RuntimeError("Whisper 歌词识别没有生成词级时间")
+    return data
+
+
 def main(request_file: str) -> int:
     request = json.loads(Path(request_file).read_text(encoding="utf-8"))
     root = Path(request["root"]).resolve()
     output = Path(request["output_path"]).resolve()
     model_path = root / "external_backends" / "alignment" / "models" / "base.pt"
+    mode = str(request.get("mode") or "align")
+    if mode not in {"align", "transcribe"}:
+        raise RuntimeError(f"不支持的歌词处理模式：{mode}")
     items = request.get("items")
+    if mode == "transcribe" and items is not None:
+        raise RuntimeError("歌词自动识别暂不支持批量 items")
     if items is not None:
         if not isinstance(items, list) or not items:
             raise RuntimeError("逐句对齐请求没有有效项目")
@@ -68,7 +109,10 @@ def main(request_file: str) -> int:
         module="stable_whisper.whisper_compatibility",
     )
     model = stable_whisper.load_model(str(model_path), device="cuda")
-    if items is not None:
+    if mode == "transcribe":
+        data = _transcribe_one(model, audio_paths[0], str(request.get("language") or "zh"))
+        runtime_language = str(request.get("language") or "zh")
+    elif items is not None:
         aligned_items = [
             _align_one(
                 model, audio,
@@ -88,6 +132,7 @@ def main(request_file: str) -> int:
         "max_cuda_bytes": torch.cuda.max_memory_allocated(),
         "language": runtime_language,
         "model": "base",
+        "mode": mode,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     partial = output.with_suffix(output.suffix + ".part")

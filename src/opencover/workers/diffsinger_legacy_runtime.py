@@ -60,36 +60,90 @@ def _prepare_imports(root: Path) -> tuple[Path, Path]:
     return backend, demo
 
 
+def smooth_voiced_f0(f0, sample_rate, hop_size, width_ms=35.0):
+    """Accepted C workflow: soften log-pitch within voiced runs only."""
+    import numpy as np
+    from scipy.ndimage import gaussian_filter1d
+    result = np.asarray(f0, dtype=np.float32).copy()
+    sigma = width_ms / 1000.0 * sample_rate / hop_size / 2.355
+    for row in result.reshape(-1, result.shape[-1]):
+        active = np.flatnonzero(row > 1)
+        for group in np.split(active, np.flatnonzero(np.diff(active) > 1) + 1):
+            if len(group) > 2:
+                row[group] = np.exp(gaussian_filter1d(np.log(row[group]), sigma=sigma, mode='nearest'))
+    return result
+
+
 def main(request_file: str) -> int:
     request = json.loads(Path(request_file).read_text(encoding="utf-8"))
     root = Path(request["root"]).resolve()
     _, demo = _prepare_imports(root)
     import numpy as np
     import soundfile as sf
+    import torch
+    from pypinyin import lazy_pinyin
+    from diffsinger_score_frontend import prepare_score, learned_timing
     from inference.svs.ds_e2e import DiffSingerE2EInfer
     from utils.hparams import hparams, set_hparams
 
     experiment = str(request.get("experiment") or "0831_opencpop_ds1000")
     config = demo / "usr" / "configs" / "midi" / "e2e" / "opencpop" / "ds100_adj_rel.yaml"
     set_hparams(config=str(config), exp_name=experiment, print_hparams=False)
+    if not torch.cuda.is_available():
+        raise RuntimeError("DiffSinger CUDA 不可用")
+    torch.manual_seed(int(request.get("seed", 777)))
     infer = DiffSingerE2EInfer(hparams)
+    strict_frames = None
     if str(request.get("pitch_control", "score")) == "score":
         import torch
 
         def score_constrained_forward(instance, inp):
             sample = instance.input_to_batch(inp)
             with torch.no_grad():
+                frame_mapping = strict_frames
+                duration_mode = request.get('duration_mode', 'acoustic_warp')
+                if strict_frames is not None and duration_mode == 'learned':
+                    duration_prediction = instance.model.fs2(
+                        sample['txt_tokens'], spk_id=sample.get('spk_ids'), infer=True, skip_decoder=True,
+                        pitch_midi=sample['pitch_midi'], midi_dur=sample['midi_dur'], is_slur=sample['is_slur'])
+                    frame_mapping = learned_timing(duration_prediction['mel2ph'][0].cpu().tolist(), evidence['note_groups'], rate, int(hparams['hop_size']))
+                    evidence['duration_mode'] = 'learned_with_exact_note_boundaries'
+                    evidence['actual_phone_frames'] = [frame_mapping.count(i+1) for i in range(len(evidence['phones']))]
                 output = instance.model(
-                    sample["txt_tokens"], spk_id=sample.get("spk_ids"), ref_mels=None, infer=True,
+                    sample["txt_tokens"], mel2ph=(torch.tensor([frame_mapping], device=sample["txt_tokens"].device) if frame_mapping is not None and duration_mode != 'acoustic_warp' else None), spk_id=sample.get("spk_ids"), ref_mels=None, infer=True,
                     pitch_midi=sample["pitch_midi"], midi_dur=sample["midi_dur"],
                     is_slur=sample["is_slur"],
                 )
                 mel_out = output["mel_out"]
-                predicted_f0 = instance.pe(mel_out)["f0_denorm_pred"]
                 mel2ph = output["mel2ph"]
+                if strict_frames is not None and duration_mode == 'acoustic_warp':
+                    natural_mapping=mel2ph[0].cpu().tolist()
+                    frame_mapping=learned_timing(natural_mapping,evidence['note_groups'],rate,int(hparams['hop_size']))
+                    pieces=[]
+                    for phone in range(1,len(evidence['phones'])+1):
+                        selection=mel2ph[0]==phone
+                        count=frame_mapping.count(phone)
+                        if not selection.any():
+                            raise RuntimeError('模型未生成音素：'+evidence['phones'][phone-1])
+                        part=mel_out[:,selection,:].transpose(1,2)
+                        pieces.append(torch.nn.functional.interpolate(part,size=count,mode='linear',align_corners=False).transpose(1,2))
+                    mel_out=torch.cat(pieces,dim=1)
+                    mel2ph=torch.tensor([frame_mapping],device=mel_out.device)
+                    evidence['duration_mode']='natural_acoustics_with_note_timing'
+                    evidence['actual_phone_frames']=[frame_mapping.count(i+1) for i in range(len(evidence['phones']))]
+                predicted_f0 = instance.pe(mel_out)["f0_denorm_pred"]
                 padded_midi = torch.nn.functional.pad(sample["pitch_midi"], [1, 0])
                 frame_midi = torch.gather(padded_midi, 1, mel2ph).cpu().numpy()
+                if strict_frames is not None and evidence.get('legato'):
+                    from librosa import note_to_midi
+                    curve=np.asarray([0 if p=='rest' else note_to_midi(p) for p in evidence['score_frame_pitches']],dtype=np.float32)
+                    if len(curve)<mel_out.shape[1]:
+                        curve=np.pad(curve,(0,mel_out.shape[1]-len(curve)),mode='edge')
+                    frame_midi=curve[:mel_out.shape[1]][None,:]
                 corrected = _score_constrained_f0(predicted_f0.cpu().numpy(), frame_midi)
+                if request.get('workflow') == 'clear_c_v1':
+                    corrected = smooth_voiced_f0(corrected, rate, int(hparams['hop_size']))
+                    evidence['f0_smoothing_fwhm_ms'] = 35
                 vocoder_f0 = torch.from_numpy(corrected).to(mel_out.device)
                 wav_out = instance.run_vocoder(mel_out, f0=vocoder_f0)
             return wav_out.cpu().numpy()[0]
@@ -100,22 +154,19 @@ def main(request_file: str) -> int:
     total = len(segments)
     for index, segment in enumerate(segments):
         output = Path(segment["output"])
-        try:
-            existing = sf.info(output)
-            if existing.frames >= existing.samplerate // 4:
-                print("OPENCOVER_PROGRESS " + json.dumps({"done": index + 1, "total": total}), flush=True)
-                continue
-        except (OSError, RuntimeError):
-            pass
         text = re.sub(r"\s+", "", str(segment["text"]))
         if not text:
             raise RuntimeError("DiffSinger 分段歌词为空")
-        values = infer.infer_once({
+        payload = {
             "text": text,
             "notes": str(segment["notes"]),
             "notes_duration": str(segment["notes_duration"]),
             "input_type": "word",
-        })
+        }
+        evidence = {}
+        if request.get("strict_timing", False):
+            payload, strict_frames, evidence = prepare_score(segment, infer.pinyin2phs, lazy_pinyin, rate, int(hparams["hop_size"]),legato=bool(request.get('legato',True)))
+        values = infer.infer_once(payload)
         audio = np.asarray(values, dtype=np.float32).reshape(-1)
         output_pitch_shift = float(segment.get("output_pitch_shift", 0.0))
         if output_pitch_shift:
@@ -130,6 +181,7 @@ def main(request_file: str) -> int:
             audio *= 0.98 / peak
         output.parent.mkdir(parents=True, exist_ok=True)
         sf.write(output, audio, rate, subtype="PCM_16")
+        output.with_suffix('.score.json').write_text(json.dumps({**evidence, 'device': str(infer.device), 'cuda_max_bytes': torch.cuda.max_memory_allocated(), 'output_duration': len(audio)/rate}, ensure_ascii=False, indent=2), encoding='utf-8')
         print("OPENCOVER_PROGRESS " + json.dumps({"done": index + 1, "total": total}), flush=True)
     return 0
 

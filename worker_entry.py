@@ -25,6 +25,8 @@ def main() -> int:
         from opencover.workers.preview_worker import main as worker_main
     elif kind == "lyric":
         from opencover.workers.lyric_cover_worker import main as worker_main
+    elif kind == "lyric_recognition":
+        from opencover.workers.lyric_recognition_worker import main as worker_main
     elif kind == "original":
         from opencover.workers.original_cover_worker import main as worker_main
     elif kind == "resource":

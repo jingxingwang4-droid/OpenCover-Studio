@@ -168,6 +168,261 @@ class Vevo2Adapter:
         )
 
 
+class SoulXSingerAdapter:
+    """Pinned, inference-only SoulX-Singer SVS backend in an isolated runtime."""
+
+    backend_id = "soulx_singer"
+    code_revision = "81aeb3ae772c70093c3de74dc23c92d983801ae4"
+    model_revision = "40493ad90286056c7a9095035164434a79daa8c9"
+    model_sha256 = "447eaf41f91a6b6659d55e9ec3c9b809221724fb8592aebaec35a23751a5b500"
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def _configured_path(self, key: str, default: Path) -> Path:
+        value = str(_marker(self.root).get(key, "")).strip()
+        if not value:
+            return default
+        path = Path(value)
+        return path if path.is_absolute() else (self.root / path).resolve()
+
+    @property
+    def runtime(self) -> Path:
+        return self._configured_path("runtime", _runtime_python(self.root))
+
+    @property
+    def repository(self) -> Path:
+        return self._configured_path("repository", self.root / "SoulX-Singer")
+
+    @property
+    def model(self) -> Path:
+        return self._configured_path("model", self.root / "models" / "model.pt")
+
+    def status(self) -> BackendStatus:
+        metadata = _marker(self.root)
+        source = self.repository / "soulxsinger" / "models" / "soulxsinger.py"
+        installed = self.runtime.is_file() and source.is_file() and self.model.is_file()
+        runtime_available = installed and _venv_base_available(self.runtime) and _python_launcher_available(self.runtime)
+        pinned = (
+            metadata.get("commit") == self.code_revision
+            and metadata.get("model_revision") == self.model_revision
+            and str(metadata.get("model_sha256", "")).lower() == self.model_sha256
+        )
+        safe_checkpoint = metadata.get("weights_only_load") is True
+        runnable = (
+            runtime_available
+            and pinned
+            and safe_checkpoint
+            and metadata.get("smoke_test_passed") is True
+        )
+        if runnable:
+            detail = str(metadata.get("detail", "官方 SVS、固定版本与 weights_only 已通过真实推理"))
+        elif installed and not runtime_available:
+            detail = "SoulX-Singer 独立 Python 运行时已丢失或断链"
+        elif installed and not pinned:
+            detail = "SoulX-Singer 代码或模型版本未固定到已验证版本"
+        elif installed and not safe_checkpoint:
+            detail = "SoulX-Singer checkpoint 尚未验证 weights_only 安全加载"
+        elif installed:
+            detail = "SoulX-Singer 文件存在，但尚未通过真实 SVS smoke test"
+        else:
+            detail = "缺少 SoulX-Singer 独立环境、官方 SVS 源码或 model.pt"
+        return BackendStatus(
+            self.backend_id,
+            "SoulX-Singer 自动改词",
+            installed,
+            runnable,
+            str(metadata.get("commit", "未验证")),
+            detail,
+        )
+
+    def generate(
+        self,
+        request_file: Path,
+        runner: Path,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> None:
+        status = self.status()
+        if not status.runnable:
+            raise BackendUnavailable(status.detail)
+        if not runner.is_file():
+            raise BackendUnavailable("SoulX-Singer 独立 worker 缺失")
+        prefix = "OPENCOVER_PROGRESS "
+
+        def on_line(line: str) -> None:
+            if progress is None or not line.startswith(prefix):
+                return
+            try:
+                event = json.loads(line[len(prefix):])
+                progress(int(event["done"]), int(event["total"]))
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+                return
+
+        run_checked_streaming(
+            [str(self.runtime), "-X", "utf8", str(runner.resolve()), str(request_file.resolve())],
+            self.root,
+            on_line,
+            timeout=7200,
+        )
+
+    def prepare_score(
+        self,
+        request_file: Path,
+        runner: Path,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> None:
+        status = self.status()
+        if not status.runnable:
+            raise BackendUnavailable(status.detail)
+        if not runner.is_file():
+            raise BackendUnavailable("SoulX-Singer 自动构谱 worker 缺失")
+        prefix = "OPENCOVER_SCORE_PROGRESS "
+
+        def on_line(line: str) -> None:
+            if progress is None or not line.startswith(prefix):
+                return
+            try:
+                event = json.loads(line[len(prefix):])
+                progress(int(event["done"]), int(event["total"]))
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+                return
+
+        run_checked_streaming(
+            [str(self.runtime), "-X", "utf8", str(runner.resolve()), str(request_file.resolve())],
+            self.root,
+            on_line,
+            timeout=3600,
+        )
+
+
+class AceStepAdapter:
+    """Pinned ACE-Step 1.5 package plus the official FlowEdit port."""
+
+    backend_id = "ace_step"
+    code_revision = "1b623443303d4816efd9d048fd0a8a8e3ac8243a"
+    flowedit_revision = "ca1e85fe9430179831e6bc6be790c332190a3866"
+    package_sha256 = "25402adb2a852a8792d0b562af7e9c7c5f84f35503542e0586fb6c033193e486"
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    @property
+    def runtime(self) -> Path:
+        return self.root / "python_embeded" / "python.exe"
+
+    @property
+    def checkpoints(self) -> Path:
+        return self.root / "checkpoints"
+
+    @property
+    def source_root(self) -> Path:
+        return self.root / "flowedit_source"
+
+    @property
+    def required_files(self) -> tuple[Path, ...]:
+        return (
+            self.source_root / "OFFICIAL_COMMIT.txt",
+            self.source_root / "acestep" / "handler.py",
+            self.source_root / "acestep" / "inference.py",
+            self.source_root / "acestep" / "models" / "common" / "flow_edit.py",
+            self.checkpoints / "vae" / "diffusion_pytorch_model.safetensors",
+            self.checkpoints / "Qwen3-Embedding-0.6B" / "model.safetensors",
+            self.checkpoints / "acestep-v15-turbo" / "model.safetensors",
+            self.checkpoints / "acestep-v15-turbo" / "silence_latent.pt",
+            self.checkpoints / "acestep-5Hz-lm-0.6B" / "model.safetensors",
+        )
+
+    def status(self) -> BackendStatus:
+        metadata = _marker(self.root)
+        installed = self.runtime.is_file() and all(path.is_file() for path in self.required_files)
+        runtime_available = installed and _python_launcher_available(self.runtime)
+        pinned = (
+            metadata.get("commit") == self.code_revision
+            and metadata.get("flowedit_source_commit") == self.flowedit_revision
+            and str(metadata.get("package_sha256", "")).lower() == self.package_sha256
+            and metadata.get("model") == "acestep-v15-turbo"
+        )
+        runnable = runtime_available and pinned and metadata.get("smoke_test_passed") is True
+        if runnable:
+            detail = str(metadata.get("detail", "ACE-Step 原生 EDIT/FlowEdit 已通过真实 CUDA 推理"))
+        elif installed and not runtime_available:
+            detail = "ACE-Step 内嵌 Python 运行时不可执行"
+        elif installed and not pinned:
+            detail = "ACE-Step 源码、整合包摘要或模型版本尚未固定"
+        elif installed:
+            detail = str(metadata.get(
+                "detail", "ACE-Step 文件已就绪，但尚未通过真实 CUDA 改词 smoke test",
+            ))
+        else:
+            missing = sum(not path.is_file() for path in self.required_files)
+            detail = f"ACE-Step 独立后端缺少 {missing} 个源码或模型文件"
+        return BackendStatus(
+            self.backend_id, "ACE-Step 1.5 原生 EDIT/FlowEdit", installed, runnable,
+            str(metadata.get("flowedit_source_commit", "未验证")), detail,
+        )
+
+    def _environment(self) -> dict[str, str]:
+        project_root = self.root.parents[1]
+        workspace = project_root / "workspace"
+        temp_dir = workspace / "temp" / "ace_step"
+        cache_dir = workspace / "cache" / "ace_step_hf"
+        triton_cache_dir = workspace / "cache" / "ace_step_triton"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        triton_cache_dir.mkdir(parents=True, exist_ok=True)
+        env = os.environ.copy()
+        # The desktop launcher may set PYTHONPATH for OpenCover itself.  Never
+        # leak that environment into ACE-Step's independent interpreter.
+        env.pop("PYTHONPATH", None)
+        env.pop("PYTHONHOME", None)
+        env.update({
+            "TEMP": str(temp_dir),
+            "TMP": str(temp_dir),
+            "HF_HOME": str(cache_dir),
+            "HF_HUB_CACHE": str(cache_dir / "hub"),
+            "HF_XET_CACHE": str(cache_dir / "xet"),
+            "TRITON_CACHE_DIR": str(triton_cache_dir),
+            "HF_HUB_OFFLINE": "1",
+            "TRANSFORMERS_OFFLINE": "1",
+            "PYTHONPATH": str(self.root) + os.pathsep + env.get("PYTHONPATH", ""),
+            "CUDA_MODULE_LOADING": "LAZY",
+            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+        })
+        return env
+
+    def generate(
+        self,
+        request_file: Path,
+        runner: Path,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> Path:
+        status = self.status()
+        if not status.runnable:
+            raise BackendUnavailable(status.detail)
+        if not runner.is_file():
+            raise BackendUnavailable("ACE-Step 独立 worker 缺失")
+        prefix = "OPENCOVER_ACE_PROGRESS "
+
+        def on_line(line: str) -> None:
+            if progress is None or not line.startswith(prefix):
+                return
+            try:
+                event = json.loads(line[len(prefix):])
+                progress(int(event["done"]), int(event["total"]))
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+                return
+
+        run_checked_streaming(
+            [str(self.runtime), "-X", "utf8", str(runner.resolve()), str(request_file.resolve())],
+            self.root, on_line, timeout=14400, env=self._environment(),
+        )
+        request = json.loads(request_file.read_text(encoding="utf-8"))
+        output = Path(str(request["output_path"]))
+        if not output.is_file() or output.stat().st_size < 4096:
+            raise RuntimeError("ACE-Step 没有生成有效音频")
+        return output
+
+
 class GameAdapter:
     backend_id = "game"
 
@@ -195,13 +450,19 @@ class GameAdapter:
         if not status.runnable:
             raise BackendUnavailable(status.detail)
         output_dir.mkdir(parents=True, exist_ok=True)
+        project = self.root.parents[1]
+        candidates = [project / 'src/opencover/workers/game_runtime.py', project / '_internal/workers/game_runtime.py']
+        runner = next((path for path in candidates if path.is_file()), None)
+        if runner is None:
+            raise BackendUnavailable('GAME GPU 运行脚本缺失')
         args = [
-            str(self._python()), "-X", "utf8", "infer.py", "extract", str(input_dir), "-m", str(self._model()),
+            str(self._python()), "-X", "utf8", str(runner), str(self.root / 'GAME'), "extract", str(input_dir), "-m", str(self._model()),
             "--language", "zh", "--batch-size", "1", "--num-workers", "0", "--precision", "32-true",
             "--glob", "source_*.wav", "--output-formats", "txt", "--pitch-format", "name",
             "--round-pitch", "--output-dir", str(output_dir),
         ]
-        run_checked(args, self.root / "GAME", timeout=7200)
+        result = run_checked(args, self.root / "GAME", timeout=7200)
+        (output_dir / "runtime.log").write_text(result.stdout + "\n" + result.stderr, encoding="utf-8")
         if not list(output_dir.rglob("source_*.txt")):
             raise RuntimeError("GAME 没有生成音符文本")
         return output_dir
@@ -362,6 +623,93 @@ class AlignmentAdapter:
         return output
 
 
+class VocalParseAdapter:
+    """Pinned singing transcription backend used only before human lyric review."""
+
+    backend_id = "vocalparse"
+    code_revision = "e7b3946c940a9216a5314f9ba11a19fd70a6befb"
+    model_revision = "4c617b1a88c8e663351d9072c549d81d7f78a36f"
+    model_sha256 = "08a69f96082ed962950b7a6e90cd1482e87b132cecab1d805a7a024fcee7b08d"
+    model_size = 4_076_867_480
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    @property
+    def runtime(self) -> Path:
+        return _runtime_python(self.root)
+
+    @property
+    def repository(self) -> Path:
+        return self.root / "source"
+
+    @property
+    def model(self) -> Path:
+        return self.root / "models" / "VocalParse" / "model.safetensors"
+
+    def status(self) -> BackendStatus:
+        metadata = _marker(self.root)
+        installed = (
+            self.runtime.is_file()
+            and (self.repository / "vocalparse" / "demo.py").is_file()
+            and self.model.is_file()
+            and self.model.stat().st_size == self.model_size
+        )
+        runtime_available = installed and _venv_base_available(self.runtime) and _python_launcher_available(self.runtime)
+        pinned = (
+            metadata.get("commit") == self.code_revision
+            and metadata.get("model_revision") == self.model_revision
+            and str(metadata.get("model_sha256", "")).lower() == self.model_sha256
+        )
+        runnable = runtime_available and pinned and metadata.get("smoke_test_passed") is True
+        if runnable:
+            detail = str(metadata.get("detail", "VocalParse 歌词/音符联合识别已通过真实 GPU 测试"))
+        elif installed and not runtime_available:
+            detail = "VocalParse 独立 Python 运行时已丢失或断链"
+        elif installed and not pinned:
+            detail = "VocalParse 代码或模型版本尚未固定到已验证版本"
+        elif installed:
+            detail = "VocalParse 文件存在，但尚未通过真实 GPU 歌声识别"
+        else:
+            detail = "缺少 VocalParse 独立环境、官方源码或完整模型权重"
+        return BackendStatus(
+            self.backend_id, "VocalParse 自动识词", installed, runnable,
+            str(metadata.get("commit", "未验证")), detail,
+        )
+
+    def transcribe(self, request_file: Path, runner: Path) -> Path:
+        status = self.status()
+        if not status.runnable:
+            raise BackendUnavailable(status.detail)
+        if not runner.is_file():
+            raise BackendUnavailable("VocalParse 运行脚本缺失")
+        project_root = self.root.parents[1]
+        temp_dir = project_root / "workspace" / "tmp" / "vocalparse"
+        cache_dir = project_root / "workspace" / "cache" / "huggingface"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        env = os.environ.copy()
+        env.update({
+            "TEMP": str(temp_dir),
+            "TMP": str(temp_dir),
+            "HF_HOME": str(cache_dir),
+            "HF_HUB_CACHE": str(cache_dir / "hub"),
+            "HF_XET_CACHE": str(cache_dir / "xet"),
+            "HF_HUB_OFFLINE": "1",
+            "TRANSFORMERS_OFFLINE": "1",
+            "PYTHONPATH": str(self.repository) + os.pathsep + env.get("PYTHONPATH", ""),
+        })
+        run_checked(
+            [str(self.runtime), "-X", "utf8", str(runner.resolve()), str(request_file.resolve())],
+            self.root, timeout=7200, env=env,
+        )
+        request = json.loads(request_file.read_text(encoding="utf-8"))
+        output = Path(str(request["output_path"]))
+        if not output.is_file() or output.stat().st_size < 32:
+            raise RuntimeError("VocalParse 没有生成有效识别结果")
+        return output
+
+
 class RVCAdapter:
     backend_id = "rvc"
 
@@ -371,10 +719,46 @@ class RVCAdapter:
     def status(self) -> BackendStatus:
         exe = _runtime_python(self.root)
         metadata = _marker(self.root)
-        installed = exe.is_file() and (self.root / "source").is_dir()
+        installed = (
+            exe.is_file()
+            and (self.root / "source").is_dir()
+            and (self.root / "models" / "hubert_base.pt").is_file()
+            and (self.root / "models" / "rmvpe.pt").is_file()
+        )
         runnable = installed and metadata.get("smoke_test_passed") is True
-        detail = "独立 CLI 环境已通过 smoke test" if runnable else ("环境存在但尚未通过真实推理 smoke test" if installed else "未安装官方 RVC CLI 环境")
+        detail = "独立 CLI 环境已通过 smoke test" if runnable else ("环境存在但尚未通过真实推理 smoke test" if installed else "缺少 RVC CLI、HuBERT 或 RMVPE 文件")
         return BackendStatus("rvc", "RVC", installed, runnable, str(metadata.get("commit", "未验证")), detail)
+
+    def _environment(self) -> dict[str, str]:
+        """Resolve RVC resources from this copy instead of a build-machine .env."""
+        project_root = self.root.parent.parent if self.root.parent.name == "external_backends" else self.root.parent
+        model_root = (self.root / "models").resolve()
+        workspace = project_root / "workspace"
+        temp_dir = workspace / "temp" / "rvc"
+        output_dir = workspace / "outputs"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env.pop("PYTHONHOME", None)
+        env.update({
+            "weight_root": str(model_root),
+            "weight_uvr5_root": "",
+            "index_root": str(model_root),
+            "rmvpe_root": str(model_root),
+            "hubert_path": str(model_root / "hubert_base.pt"),
+            "save_uvr_path": str(output_dir.resolve()),
+            "TEMP": str(temp_dir.resolve()),
+            "TMP": str(temp_dir.resolve()),
+        })
+        ffmpeg_root = project_root / "ffmpeg"
+        ffmpeg_bin = next(
+            (path for path in ffmpeg_root.glob("*/bin") if (path / "ffmpeg.exe").is_file()),
+            None,
+        )
+        if ffmpeg_bin is not None:
+            env["PATH"] = str(ffmpeg_bin.resolve()) + os.pathsep + env.get("PATH", "")
+        return env
 
     def convert(
         self, input_audio: Path, output_audio: Path, model: Path, pitch: int,
@@ -392,7 +776,7 @@ class RVCAdapter:
         if usable_index:
             args += ["-if", str(usable_index)]
         output_audio.parent.mkdir(parents=True, exist_ok=True)
-        run_checked(args, self.root)
+        run_checked(args, self.root, env=self._environment())
         if not output_audio.is_file() or output_audio.stat().st_size < 1024:
             raise RuntimeError("RVC 没有生成有效输出")
         return output_audio
@@ -419,7 +803,7 @@ class RVCAdapter:
 
         run_checked_streaming(
             [str(_runtime_python(self.root)), "-X", "utf8", str(runner), str(request_file)],
-            self.root, on_line, timeout=7200,
+            self.root, on_line, timeout=7200, env=self._environment(),
         )
 
 
@@ -437,6 +821,16 @@ class DDSPAdapter:
         detail = "main_reflow.py 已通过真实推理" if runnable else ("环境存在但尚未通过真实推理 smoke test" if installed else "未安装官方 DDSP-SVC 环境")
         return BackendStatus("ddsp", "DDSP-SVC", installed, runnable, str(metadata.get("commit", "未验证")), detail)
 
+    def _environment(self) -> dict[str, str]:
+        project_root = self.root.parents[1]
+        temp_dir = project_root / "workspace" / "temp" / "ddsp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env.pop("PYTHONHOME", None)
+        env.update({"TEMP": str(temp_dir), "TMP": str(temp_dir)})
+        return env
+
     def convert(
         self, input_audio: Path, output_audio: Path, model: Path, pitch: int,
         config: Path | None = None, *, f0_method: str = "rmvpe", f0_min: float = 50,
@@ -450,7 +844,7 @@ class DDSPAdapter:
                 "-o", str(output_audio), "-k", str(pitch), "-id", "1",
                 "-pe", f0_method, "-fmin", str(f0_min), "-fmax", str(f0_max),
                 "-th", str(threshold_db)]
-        run_checked(args, self.root / "DDSP-SVC")
+        run_checked(args, self.root / "DDSP-SVC", env=self._environment())
         if not output_audio.is_file() or output_audio.stat().st_size < 1024:
             raise RuntimeError("DDSP-SVC 没有生成有效输出")
         return output_audio
@@ -603,7 +997,7 @@ class UVR5Adapter:
             dry_vocals = next(stage3.glob("*_(Dry)_*.wav"), None)
         if dry_vocals is None:
             raise RuntimeError("UVR5 第三阶段未生成去混响主唱")
-        for source, target_name in ((dry_vocals, "vocals.wav"), (source_other, "other.wav")):
+        for source, target_name in ((dry_vocals, "vocals.wav"), (source_other, "other.wav"), (source_vocals, "total_vocals.wav"), (backing_vocals, "backing_vocals.wav")):
             target = output_dir / target_name
             partial = target.with_suffix(".wav.part")
             shutil.copy2(source, partial)

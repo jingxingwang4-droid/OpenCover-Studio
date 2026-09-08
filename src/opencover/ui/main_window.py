@@ -18,14 +18,12 @@ from PySide6.QtWidgets import (
 )
 
 from opencover import __version__
-from opencover.adapters.backends import AlignmentAdapter, DDSPAdapter, DiffSingerLegacyAdapter, EspnetVisinger2Adapter, GameAdapter, MSSTAdapter, RVCAdapter, Vevo2Adapter
+from opencover.adapters.backends import AlignmentAdapter, DDSPAdapter, DiffSingerLegacyAdapter, GameAdapter, MSSTAdapter, RVCAdapter, UVR5Adapter, VocalParseAdapter
 from opencover.adapters.base import BackendStatus
 from opencover.config import Settings
 from opencover.core.hardware_detector import HardwareInfo
 from opencover.core.job_manager import JobManager
 from opencover.audio.processing import ffmpeg_path
-from opencover.lyrics.midi import load_midi
-from opencover.lyrics.processing import decode_lyrics_file
 from opencover.models.importer import ModelImporter
 from opencover.models.registry import ModelRegistry
 from opencover.paths import AppPaths
@@ -64,7 +62,7 @@ class HomePage(QWidget):
     navigate = Signal(str)
     import_requested = Signal()
 
-    def __init__(self, hardware: HardwareInfo, paths: AppPaths, database: Database, registry: ModelRegistry):
+    def __init__(self, hardware: HardwareInfo, paths: AppPaths, database: Database, registry: ModelRegistry, private_edition: bool = False):
         super().__init__(); self.database = database; self.registry = registry
         page, layout = panel_layout("OpenCover Studio", "本地、可审计的 AI 歌曲翻唱工作台")
         QVBoxLayout(self).addWidget(page)
@@ -72,7 +70,7 @@ class HomePage(QWidget):
         grid = QGridLayout(hero); grid.setContentsMargins(22, 20, 22, 20); grid.setSpacing(12)
         original = QPushButton("原词翻唱\n保留歌词，只更换演唱音色")
         original.setMinimumHeight(92); original.setObjectName("Primary")
-        lyric = QPushButton("改词翻唱 Beta\n尽量保留旋律，替换歌词")
+        lyric = QPushButton("改词翻唱\n正在开发中" if private_edition else "改词翻唱 Beta\n尽量保留旋律，替换歌词")
         lyric.setMinimumHeight(92)
         original.clicked.connect(lambda: self.navigate.emit("原词翻唱"))
         lyric.clicked.connect(lambda: self.navigate.emit("改词翻唱 Beta"))
@@ -117,6 +115,20 @@ class HomePage(QWidget):
             f"{model.display_name}  ·  {model.engine.upper()}  ·  {'可试听' if model.preview else '待生成试听'}"
             for model in voices
         ) or "暂无已导入音色")
+
+
+class LyricDevelopmentPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        page, layout = panel_layout("改词翻唱", "正在开发中")
+        QVBoxLayout(self).addWidget(page)
+        card = QFrame(); card.setObjectName("Panel")
+        card_layout = QVBoxLayout(card); card_layout.setContentsMargins(24, 24, 24, 24)
+        title = QLabel("正在开发中"); title.setObjectName("PageTitle")
+        detail = QLabel("本测试版私人包未包含改词翻唱组件。功能完成质量验证后再开放。")
+        detail.setWordWrap(True); detail.setObjectName("Muted")
+        card_layout.addWidget(title); card_layout.addWidget(detail)
+        layout.addWidget(card); layout.addStretch()
 
 
 class CoverPage(QWidget):
@@ -173,21 +185,27 @@ class CoverPage(QWidget):
 class LyricPage(QWidget):
     start_requested = Signal(dict)
     import_requested = Signal()
+    recognize_requested = Signal(str)
 
     def __init__(self, registry: ModelRegistry, paths: AppPaths, settings: Settings):
-        super().__init__(); self.registry = registry; self.paths = paths; self.settings = settings; self.midi_path: Path | None = None
-        page, layout = panel_layout("改词翻唱 Beta", "Beta：无时间戳原歌词会优先自动强制对齐；复杂歌声仍可改用带时间戳的 LRC。")
+        super().__init__(); self.registry = registry; self.paths = paths; self.settings = settings
+        page, layout = panel_layout(
+            "改词翻唱",
+            "上传原曲，填写或导入新旧歌词；按原唱旋律生成改词短句，其余部分保留原曲。",
+        )
         QVBoxLayout(self).addWidget(page); self.drop = AudioDropArea(); layout.addWidget(self.drop)
         self.input_player = AudioPlayer(); layout.addWidget(self.input_player)
         self.drop.path_changed.connect(lambda value: self.input_player.set_source(Path(value)))
         fields = QFrame(); fields.setObjectName("Panel"); form = QFormLayout(fields); form.setContentsMargins(18, 16, 18, 16)
-        self.original = QTextEdit(); self.original.setPlaceholderText("粘贴原歌词，或导入 TXT/LRC"); self.original.setMaximumHeight(92)
-        self.new = QTextEdit(); self.new.setPlaceholderText("粘贴新歌词，建议逐行对应原歌词"); self.new.setMaximumHeight(92)
-        form.addRow("原歌词", self._lyric_editor(self.original)); form.addRow("新歌词", self._lyric_editor(self.new))
-        self.midi_file = QLineEdit(); self.midi_file.setReadOnly(True); self.midi_file.setPlaceholderText("可选；未上传时自动从原唱提取旋律")
-        form.addRow("旋律 MIDI（可选）", self._midi_picker())
+        self.original = QTextEdit(); self.original.setPlaceholderText("填写或导入原歌词 TXT/LRC，也可自动识别后校对"); self.original.setMaximumHeight(120)
+        self.new = QTextEdit(); self.new.setPlaceholderText("按原歌词逐行修改；保留未修改的行"); self.new.setMaximumHeight(120)
+        self.recognize = QPushButton("自动识别歌词")
+        form.addRow("原歌词（识别后校对）", self._lyric_editor(self.original, self.recognize))
+        form.addRow("修改后歌词", self._lyric_editor(self.new))
+        self.generator_label = QLabel("GAME + DiffSinger")
+        form.addRow("歌声生成器", self.generator_label)
         selectors = QWidget(); grid = QGridLayout(selectors); grid.setContentsMargins(0, 0, 0, 0)
-        self.engine = QComboBox(); self.engine.addItems(["RVC", "DDSP"]); self.voice = QComboBox()
+        self.engine = QComboBox(); self.engine.addItem("原生歌声（吐字优先）", "native"); self.engine.addItem("RVC", "rvc"); self.engine.addItem("DDSP", "ddsp"); self.voice = QComboBox()
         self.strategy = QComboBox(); self.strategy.addItems(["均衡", "保守", "强制"])
         self.pitch = pitch_selector()
         self.balance = QComboBox(); self.balance.addItems(["均衡", "人声更突出", "伴奏更突出"])
@@ -198,33 +216,29 @@ class LyricPage(QWidget):
         for column, (label, widget) in enumerate((("升降调", self.pitch), ("混音", self.balance), ("输出", self.output_format))):
             grid.addWidget(QLabel(label), 1, column * 2); grid.addWidget(widget, 1, column * 2 + 1)
         form.addRow("生成设置", selectors)
-        score = EspnetVisinger2Adapter(paths.external_backends / "espnet_visinger2").status()
-        status = Vevo2Adapter(paths.external_backends / "vevo2").status()
-        fallback = [GameAdapter(paths.external_backends / "game").status(), DiffSingerLegacyAdapter(paths.external_backends / "diffsinger").status()]
-        ready = (score.runnable and fallback[0].runnable) or status.runnable or all(item.runnable for item in fallback)
-        self._default_generator_ready = ready
-        self._diffsinger_ready = score.runnable or fallback[1].runnable
-        if score.runnable and fallback[0].runnable:
-            detail = "默认使用 GAME + 44.1 kHz VISinger2，按提取出的音符音高和时值重新演唱；之后再由所选 RVC/DDSP 音色转换。"
-        elif status.runnable:
-            detail = "VISinger2 未就绪；Vevo2 可生成歌声，但不保证逐音符复刻原曲。"
-        elif ready:
-            detail = "现代乐谱模型未就绪；只能使用 GAME + legacy DiffSinger，音质会受限。"
-        else:
-            detail = "VISinger2、Vevo2 与 legacy DiffSinger 均未就绪，请先到组件管理检查。"
+        self.workflow_note = QLabel("自动处理：柔化转音、均衡句间音量、平滑伴奏衔接；未改词部分保留原曲。")
+        self.workflow_note.setWordWrap(True); self.workflow_note.setObjectName("Muted")
+        form.addRow("", self.workflow_note)
+        self._vocalparse_ready = VocalParseAdapter(paths.external_backends / 'vocalparse').status().runnable
+        detail = '正在检查改词组件'
         self.note = QLabel(detail)
         self.note.setWordWrap(True); self.note.setObjectName("Muted"); form.addRow("当前状态", self.note)
         actions = QWidget(); row = QHBoxLayout(actions); row.setContentsMargins(0, 0, 0, 0)
-        add = QPushButton("导入音色"); self.start = QPushButton("开始改词翻唱"); self.start.setObjectName("Primary"); self.start.setEnabled(ready)
+        add = QPushButton("导入音色"); self.start = QPushButton("开始改词翻唱"); self.start.setObjectName("Primary"); self.start.setEnabled(False)
         row.addWidget(add); row.addStretch(); row.addWidget(self.start); form.addRow("", actions)
-        self.engine.currentTextChanged.connect(self.refresh_models); add.clicked.connect(self.import_requested); self.start.clicked.connect(self._start)
-        layout.addWidget(fields); layout.addStretch(); self.refresh_models()
+        self.engine.currentTextChanged.connect(self.refresh_models); add.clicked.connect(self.import_requested); self.start.clicked.connect(self._start); self.recognize.clicked.connect(self._recognize)
+        layout.addWidget(fields); layout.addStretch(); self.refresh_models(); self._refresh_generator_state()
 
-    def _lyric_editor(self, editor: QTextEdit) -> QWidget:
+    def _lyric_editor(self, editor: QTextEdit, extra: QPushButton | None = None) -> QWidget:
         box = QWidget(); row = QHBoxLayout(box); row.setContentsMargins(0, 0, 0, 0); button = QPushButton("导入 TXT/LRC")
-        button.clicked.connect(lambda: self._load_lyrics(editor)); row.addWidget(editor, 1); row.addWidget(button); return box
+        button.clicked.connect(lambda: self._load_lyrics(editor)); row.addWidget(editor, 1); row.addWidget(button)
+        if extra is not None:
+            row.addWidget(extra)
+        return box
 
     def _load_lyrics(self, editor: QTextEdit) -> None:
+        from opencover.lyrics.processing import decode_lyrics_file
+
         filename, _ = QFileDialog.getOpenFileName(self, "导入歌词", "", "歌词 (*.lrc *.txt);;所有文件 (*)")
         if not filename:
             return
@@ -233,42 +247,45 @@ class LyricPage(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "歌词导入失败", str(exc))
 
-    def _midi_picker(self) -> QWidget:
-        box = QWidget(); row = QHBoxLayout(box); row.setContentsMargins(0, 0, 0, 0)
-        choose = QPushButton("上传 MIDI"); clear = QPushButton("清除")
-        choose.clicked.connect(self._load_midi); clear.clicked.connect(self._clear_midi)
-        row.addWidget(self.midi_file, 1); row.addWidget(choose); row.addWidget(clear)
-        return box
-
-    def _load_midi(self) -> None:
-        filename, _ = QFileDialog.getOpenFileName(self, "上传旋律 MIDI", "", "MIDI 文件 (*.mid *.midi)")
-        if not filename:
+    def _recognize(self) -> None:
+        if not self.drop.path:
+            QMessageBox.warning(self, "缺少歌曲", "请先拖入或选择歌曲。")
             return
-        path = Path(filename)
-        try:
-            midi = load_midi(path)
-        except ValueError as exc:
-            QMessageBox.critical(self, "MIDI 导入失败", str(exc))
-            return
-        self.midi_path = path
-        self.midi_file.setText(str(path))
-        self.midi_file.setToolTip(str(path))
-        self.start.setEnabled(self._diffsinger_ready)
-        self.note.setText(
-            f"已读取 MIDI：{midi.track_count} 条轨道、{midi.note_count} 个音符、约 {midi.duration:.1f} 秒。"
-            + ("生成时会自动选择主旋律轨道并与 LRC 时间轴对齐，再交给 VISinger2 乐谱合成；不会再用 GAME 猜音高。" if self._diffsinger_ready
-               else "文件有效，但 VISinger2/legacy DiffSinger 尚未就绪，请先到组件管理修复。")
-        )
+        if self.original.toPlainText().strip():
+            answer = QMessageBox.question(self, "覆盖现有歌词", "重新识别会覆盖原歌词编辑框，是否继续？")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.set_recognition_busy(True, "正在后台分离主唱并识别歌词……")
+        self.recognize_requested.emit(str(self.drop.path))
 
-    def _clear_midi(self) -> None:
-        self.midi_path = None
-        self.midi_file.clear(); self.midi_file.setToolTip("")
-        self.start.setEnabled(self._default_generator_ready)
-        self.note.setText("未上传 MIDI：默认由 GAME 提取原唱音符，再用 VISinger2 按音高和时值重新演唱；自动提取仍可能出现个别音符边界误差。")
+    def set_recognition_busy(self, busy: bool, message: str = "") -> None:
+        self.recognize.setEnabled(self._vocalparse_ready and not busy)
+        self.recognize.setText("正在识别……" if busy else "自动识别歌词")
+        if message:
+            self.note.setText(message)
+
+    def apply_recognized_lyrics(self, lyrics: str) -> None:
+        self.original.setPlainText(lyrics)
+        if not self.new.toPlainText().strip():
+            self.new.setPlainText(lyrics)
+        self.set_recognition_busy(False, "已按停顿分成约 5–9 秒并填入；请保留起止时间，校对后再改词。")
+
+    def _refresh_generator_state(self) -> None:
+        from opencover.pipelines.lyric_cover import LyricCoverPipeline
+        pipeline = LyricCoverPipeline(self.paths.root)
+        missing = [status.detail for adapter in (pipeline.uvr5, pipeline.game, pipeline.diffsinger, pipeline.alignment)
+                   if not (status := adapter.status()).runnable]
+        self._vocalparse_ready = VocalParseAdapter(self.paths.external_backends / 'vocalparse').status().runnable
+        self.start.setEnabled(not missing)
+        self.recognize.setEnabled(self._vocalparse_ready)
+        self.note.setText('；'.join(missing) if missing else '组件已就绪。填写新旧歌词即可开始；导出后请试听吐字与旋律。')
 
     def refresh_models(self) -> None:
         current = self.voice.currentData(); self.voice.clear()
-        models = self.registry.selectable(self.engine.currentText().lower())
+        if self.engine.currentData() == "native":
+            self.voice.addItem("DiffSinger 原生中文歌声", "diffsinger_native")
+            return
+        models = self.registry.selectable(str(self.engine.currentData()))
         for model in models:
             self.voice.addItem(model.display_name, model.id)
         index = self.voice.findData(current)
@@ -283,28 +300,21 @@ class LyricPage(QWidget):
         if self.voice.currentData() is None:
             QMessageBox.warning(self, "缺少音色", "当前引擎没有可用音色，请先导入。")
             return
-        if not self.original.toPlainText().strip() or not self.new.toPlainText().strip():
-            QMessageBox.warning(self, "缺少歌词", "请填写原歌词和新歌词。")
+        if not self.new.toPlainText().strip():
+            QMessageBox.warning(self, "缺少歌词", "请填写新歌词。")
             return
-        if self.midi_path is not None:
-            try:
-                load_midi(self.midi_path)
-            except ValueError as exc:
-                QMessageBox.warning(self, "MIDI 无效", str(exc))
-                return
-            score = EspnetVisinger2Adapter(self.paths.external_backends / "espnet_visinger2").status()
-            legacy = DiffSingerLegacyAdapter(self.paths.external_backends / "diffsinger").status()
-            if not score.runnable and not legacy.runnable:
-                QMessageBox.warning(self, "乐谱模型不可用", "上传 MIDI 后需要 VISinger2 或 legacy DiffSinger：" + score.detail)
-                return
+        if not self.original.toPlainText().strip():
+            QMessageBox.warning(self, "缺少原歌词", "请先自动识别并人工校对原歌词。")
+            return
         model = self.registry.get(str(self.voice.currentData())); selected_pitch = self.pitch.currentData()
         pitch = int(selected_pitch) if selected_pitch is not None else int(model.recommended_pitch if model else 0)
         self.start_requested.emit({
-            "input_path": str(self.drop.path), "engine": self.engine.currentText().lower(), "model_id": self.voice.currentData(),
+            "input_path": str(self.drop.path), "engine": str(self.engine.currentData()), "model_id": self.voice.currentData(),
             "options": {"original_lyrics": self.original.toPlainText(), "new_lyrics": self.new.toPlainText(),
             "strategy": self.strategy.currentText(), "pitch": pitch, "pitch_mode": "auto" if selected_pitch is None else "manual", "balance": self.balance.currentText(),
             "output_format": self.output_format.currentText().lower(), "memory_profile": self.settings.memory_profile,
-            "midi_path": str(self.midi_path) if self.midi_path is not None else ""},
+            "generator": "diffsinger",
+            "auto_recognize_lyrics": False},
         })
 
 
@@ -637,9 +647,9 @@ class HistoryPage(QWidget):
 
 
 class ComponentPage(QWidget):
-    def __init__(self, paths: AppPaths, jobs: JobManager, database: Database):
+    def __init__(self, paths: AppPaths, jobs: JobManager, database: Database, include_lyric_components: bool = True):
         super().__init__(); self.paths = paths; page, layout = panel_layout("组件管理", "仅通过本机文件和真实 smoke test 判定状态；不会执行下载包内的未知脚本。")
-        self.jobs = jobs; self.database = database; self.active_job: str | None = None
+        self.jobs = jobs; self.database = database; self.include_lyric_components = include_lyric_components; self.active_job: str | None = None
         QVBoxLayout(self).addWidget(page); self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(["组件", "状态", "版本", "说明"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch); self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         layout.addWidget(self.table, 1)
@@ -718,13 +728,14 @@ class ComponentPage(QWidget):
         ffmpeg = ffmpeg_path(self.paths.root)
         statuses = [BackendStatus("ffmpeg", "FFmpeg", bool(ffmpeg), bool(ffmpeg), str(ffmpeg or "未安装"), "本地可执行文件已找到" if ffmpeg else "基础音频运行时缺失")]
         statuses += [MSSTAdapter(self.paths.external_backends / "msst").status(), RVCAdapter(self.paths.external_backends / "rvc").status(), DDSPAdapter(self.paths.external_backends / "ddsp").status()]
-        statuses += [
-            EspnetVisinger2Adapter(self.paths.external_backends / "espnet_visinger2").status(),
-            Vevo2Adapter(self.paths.external_backends / "vevo2").status(),
-            GameAdapter(self.paths.external_backends / "game").status(),
-            DiffSingerLegacyAdapter(self.paths.external_backends / "diffsinger").status(),
-            AlignmentAdapter(self.paths.external_backends / "alignment").status(),
-        ]
+        if self.include_lyric_components:
+            statuses += [
+                UVR5Adapter(self.paths.external_backends / "uvr5", (ffmpeg or self.paths.ffmpeg / "ffmpeg.exe").parent).status(),
+                GameAdapter(self.paths.external_backends / "game").status(),
+                DiffSingerLegacyAdapter(self.paths.external_backends / "diffsinger").status(),
+                AlignmentAdapter(self.paths.external_backends / "alignment").status(),
+                VocalParseAdapter(self.paths.external_backends / "vocalparse").status(),
+            ]
         self.table.setRowCount(len(statuses))
         for r, item in enumerate(statuses):
             state = "可用" if item.runnable else ("未就绪" if item.installed else "未安装")
@@ -751,6 +762,7 @@ class SettingsPage(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, paths: AppPaths, settings: Settings, hardware: HardwareInfo, database: Database):
         super().__init__(); self.paths = paths; self.app_settings = settings; self.hardware = hardware; self.database = database
+        self.private_edition = (paths.root / "PRIVATE_EDITION").is_file()
         self.registry = ModelRegistry(paths.weights); self.importer = ModelImporter(paths.weights, ffmpeg_path(paths.root)); self.jobs = JobManager(database, paths.root, self)
         self.setWindowTitle("OpenCover Studio")
         icon_path = paths.assets / "图标.jpg"
@@ -761,7 +773,8 @@ class MainWindow(QMainWindow):
         sidebar = QFrame(); sidebar.setObjectName("Sidebar"); sidebar.setFixedWidth(204); nav = QVBoxLayout(sidebar); nav.setContentsMargins(0, 0, 0, 0)
         brand = QLabel("OpenCover\nStudio"); brand.setObjectName("Brand"); nav.addWidget(brand); self.nav_buttons: dict[str, QPushButton] = {}
         for name in NAV_ITEMS:
-            button = QPushButton(name); button.setObjectName("NavButton"); button.setCheckable(True); button.clicked.connect(lambda checked=False, n=name: self.navigate(n)); nav.addWidget(button); self.nav_buttons[name] = button
+            label = "改词翻唱" if self.private_edition and name == "改词翻唱 Beta" else name
+            button = QPushButton(label); button.setObjectName("NavButton"); button.setCheckable(True); button.clicked.connect(lambda checked=False, n=name: self.navigate(n)); nav.addWidget(button); self.nav_buttons[name] = button
         nav.addStretch(); status = QLabel(f"{hardware.gpu or '未检测到 GPU'}\n{hardware.memory_profile}显存 · v{__version__}"); status.setWordWrap(True); status.setObjectName("SidebarStatus"); nav.addWidget(status); shell.addWidget(sidebar)
         self.stack = QStackedWidget(); shell.addWidget(self.stack, 1); self.pages: dict[str, QWidget] = {}
         self._apply_background()
@@ -780,15 +793,16 @@ class MainWindow(QMainWindow):
         )
 
     def _add_pages(self) -> None:
-        home = HomePage(self.hardware, self.paths, self.database, self.registry); cover = CoverPage(self.registry, self.app_settings); lyric = LyricPage(self.registry, self.paths, self.app_settings); voices = VoiceManagerPage(self.registry, self.database); history = HistoryPage(self.database, self.paths, self.registry)
+        home = HomePage(self.hardware, self.paths, self.database, self.registry, self.private_edition); cover = CoverPage(self.registry, self.app_settings); lyric = LyricDevelopmentPage() if self.private_edition else LyricPage(self.registry, self.paths, self.app_settings); voices = VoiceManagerPage(self.registry, self.database); history = HistoryPage(self.database, self.paths, self.registry)
         home.navigate.connect(self.navigate); home.import_requested.connect(self.import_voice); cover.import_requested.connect(self.import_voice); cover.start_requested.connect(self.start_job); voices.import_requested.connect(self.import_voice)
-        lyric.import_requested.connect(self.import_voice); lyric.start_requested.connect(self.start_lyric_job)
+        if isinstance(lyric, LyricPage):
+            lyric.import_requested.connect(self.import_voice); lyric.start_requested.connect(self.start_lyric_job); lyric.recognize_requested.connect(self.start_lyric_recognition)
         voices.generate_requested.connect(self.start_preview_job); voices.model_selected.connect(self.select_model)
         voices.edit_requested.connect(self.edit_voice)
         history.cancel_requested.connect(self.jobs.cancel); history.rerun_requested.connect(self.rerun_job); self.jobs.event.connect(lambda job_id, event: history.refresh())
         self.jobs.event.connect(self._job_event)
         self.jobs.finished.connect(self._job_finished)
-        pages = {"首页": home, "原词翻唱": cover, "改词翻唱 Beta": lyric, "音色管理": voices, "任务记录": history, "组件管理": ComponentPage(self.paths, self.jobs, self.database), "设置": SettingsPage(self.app_settings, self.hardware, self.paths.workspace / "settings.json")}
+        pages = {"首页": home, "原词翻唱": cover, "改词翻唱 Beta": lyric, "音色管理": voices, "任务记录": history, "组件管理": ComponentPage(self.paths, self.jobs, self.database, not self.private_edition), "设置": SettingsPage(self.app_settings, self.hardware, self.paths.workspace / "settings.json")}
         for name, page in pages.items(): self.pages[name] = page; self.stack.addWidget(page)
 
     def navigate(self, name: str) -> None:
@@ -816,7 +830,9 @@ class MainWindow(QMainWindow):
         page = self.pages["原词翻唱"]
         if isinstance(page, CoverPage): page.refresh_models()
         lyric = self.pages["改词翻唱 Beta"]
-        if isinstance(lyric, LyricPage): lyric.refresh_models()
+        if isinstance(lyric, LyricPage):
+            lyric.refresh_models()
+            lyric._refresh_generator_state()
         manager = self.pages["音色管理"]
         if isinstance(manager, VoiceManagerPage): manager.refresh()
 
@@ -834,7 +850,12 @@ class MainWindow(QMainWindow):
         if kind == "original":
             self.start_job(payload)
         elif kind == "lyric":
-            self.start_lyric_job(payload)
+            if self.private_edition:
+                QMessageBox.information(self, "改词翻唱", "正在开发中，本测试版私人包未包含相关组件。")
+            else:
+                self.start_lyric_job(payload)
+        elif kind == "lyric_recognition":
+            self.start_lyric_recognition(str(payload["input_path"]))
         elif kind == "preview":
             self.start_preview_job(str(payload["model_id"])); self.navigate("任务记录")
         elif kind == "resource":
@@ -862,21 +883,43 @@ class MainWindow(QMainWindow):
             return
         QMessageBox.information(self, "试听任务已创建", f"任务 {job_id[:8]} 正在后台使用真实模型生成试听。")
 
+    def start_lyric_recognition(self, input_path: str) -> None:
+        from opencover.pipelines.lyric_recognition import LyricRecognitionPipeline, LyricRecognitionRequest
+
+        page = self.pages.get("改词翻唱 Beta")
+        pipeline = LyricRecognitionPipeline(self.paths.root)
+        issues = pipeline.preflight(LyricRecognitionRequest(Path(input_path)))
+        if issues:
+            if isinstance(page, LyricPage):
+                page.set_recognition_busy(False, "自动识别未就绪：" + "；".join(issues))
+            QMessageBox.warning(self, "自动识词组件尚未就绪", "无法开始真实识别：\n\n" + "\n".join(f"• {item}" for item in issues))
+            return
+        try:
+            job_id = self.jobs.submit_lyric_recognition(input_path)
+        except Exception as exc:
+            if isinstance(page, LyricPage):
+                page.set_recognition_busy(False, str(exc))
+            QMessageBox.critical(self, "无法创建歌词识别任务", str(exc))
+            return
+        if isinstance(page, LyricPage):
+            page.set_recognition_busy(True, f"VocalParse 任务 {job_id[:8]} 正在后台识别；完成后会自动填入歌词。")
+        QMessageBox.information(self, "歌词识别任务已创建", "可继续停留在本页；识别完成后会自动填入两个歌词框。")
+
     def start_lyric_job(self, payload: dict) -> None:
+        if self.private_edition:
+            QMessageBox.information(self, "改词翻唱", "正在开发中，本测试版私人包未包含相关组件。")
+            return
         model = self.registry.get(str(payload["model_id"])); missing = []
-        if model is None:
+        if model is None and payload.get("engine") != "native":
             missing.append("音色不存在")
         options = payload.get("options", {})
-        has_midi = isinstance(options, dict) and bool(str(options.get("midi_path", "")).strip())
-        statuses = [MSSTAdapter(self.paths.external_backends / "msst").status()]
-        vevo = Vevo2Adapter(self.paths.external_backends / "vevo2").status()
-        score = EspnetVisinger2Adapter(self.paths.external_backends / "espnet_visinger2").status()
-        fallback = [GameAdapter(self.paths.external_backends / "game").status(), DiffSingerLegacyAdapter(self.paths.external_backends / "diffsinger").status()]
-        if has_midi and not score.runnable and not fallback[1].runnable:
-            missing.append("上传 MIDI 后需要 VISinger2 或 legacy DiffSinger 乐谱合成组件")
-        elif not has_midi and not (score.runnable and fallback[0].runnable) and not vevo.runnable and not all(item.runnable for item in fallback):
-            missing.append("VISinger2、Vevo2 与 legacy DiffSinger 均未就绪")
-        statuses.append((RVCAdapter(self.paths.external_backends / "rvc") if payload["engine"] == "rvc" else DDSPAdapter(self.paths.external_backends / "ddsp")).status())
+        from opencover.pipelines.lyric_cover import LyricCoverPipeline, LyricCoverRequest
+        pipeline = LyricCoverPipeline(self.paths.root)
+        statuses = [adapter.status() for adapter in (pipeline.uvr5, pipeline.game, pipeline.diffsinger, pipeline.alignment)]
+        if str(options.get('generator', 'diffsinger')) != 'diffsinger':
+            missing.append('当前改词翻唱只支持 GAME + DiffSinger，请重新创建任务')
+        if payload["engine"] in {"rvc", "ddsp"}:
+            statuses.append((RVCAdapter(self.paths.external_backends / "rvc") if payload["engine"] == "rvc" else DDSPAdapter(self.paths.external_backends / "ddsp")).status())
         missing.extend(item.detail for item in statuses if not item.runnable)
         if not self.hardware.ffmpeg:
             missing.append("FFmpeg 未安装")
@@ -904,6 +947,11 @@ class MainWindow(QMainWindow):
 
     def _job_finished(self, job_id: str, success: bool) -> None:
         self._models_changed()
+        job = self.database.get_job(job_id)
+        if job and job.get("kind") == "lyric_recognition" and not success:
+            page = self.pages.get("改词翻唱 Beta")
+            if isinstance(page, LyricPage):
+                page.set_recognition_busy(False, "自动识别失败：" + str(job.get("error") or "请查看任务记录"))
         history = self.pages.get("任务记录")
         if isinstance(history, HistoryPage):
             history.refresh()
@@ -918,6 +966,19 @@ class MainWindow(QMainWindow):
         job = self.database.get_job(job_id)
         if not job:
             return
+        if job.get("kind") == "lyric_recognition" and getattr(event, "type", "") == "result":
+            path = Path(str(getattr(event, "path", "")))
+            page = self.pages.get("改词翻唱 Beta")
+            try:
+                lyrics = path.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeError) as exc:
+                if isinstance(page, LyricPage):
+                    page.set_recognition_busy(False, f"无法读取识别结果：{exc}")
+            else:
+                if isinstance(page, LyricPage):
+                    page.apply_recognized_lyrics(lyrics)
+                    self.navigate("改词翻唱 Beta")
+                QMessageBox.information(self, "歌词识别完成", "结果已填入。请校对原歌词，再修改“修改后歌词”。")
         value = int(job.get("progress") or 0)
         stage = str(job.get("stage") or "运行中")
         label = f"任务 {job_id[:8]} · {value}% · {stage}"
