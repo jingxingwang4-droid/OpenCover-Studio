@@ -762,7 +762,9 @@ class SettingsPage(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, paths: AppPaths, settings: Settings, hardware: HardwareInfo, database: Database):
         super().__init__(); self.paths = paths; self.app_settings = settings; self.hardware = hardware; self.database = database
-        self.private_edition = (paths.root / "PRIVATE_EDITION").is_file()
+        # Legacy private packages omit lyrics. Full private packages explicitly
+        # opt in; privacy and feature availability are separate decisions.
+        self.private_edition = (paths.root / "PRIVATE_EDITION").is_file() and not (paths.root / "LYRIC_EDITION").is_file()
         self.registry = ModelRegistry(paths.weights); self.importer = ModelImporter(paths.weights, ffmpeg_path(paths.root)); self.jobs = JobManager(database, paths.root, self)
         self.setWindowTitle("OpenCover Studio")
         icon_path = paths.assets / "图标.jpg"

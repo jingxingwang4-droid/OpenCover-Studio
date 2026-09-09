@@ -32,8 +32,9 @@ def main() -> int:
     if not local_ffmpeg.exists():
         local_ffmpeg = next(paths.ffmpeg.glob("*/bin/ffmpeg.exe"), local_ffmpeg)
     runtimes = [
-        paths.external_backends / name / "runtime" / "Scripts" / "python.exe"
-        for name in ("rvc", "ddsp", "vevo2")
+        paths.external_backends / name / "runtime" / suffix
+        for name in ("rvc", "ddsp")
+        for suffix in ("python.exe", "Scripts/python.exe")
     ]
     torch_python = next((runtime for runtime in runtimes if runtime.is_file()), None)
     hardware = detect_hardware(
