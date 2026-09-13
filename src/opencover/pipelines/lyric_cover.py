@@ -3,7 +3,7 @@ import hashlib
 import json
 import shutil
 import importlib.util
-import marshal
+import types
 from dataclasses import dataclass
 from pathlib import Path
 import numpy as np
@@ -11,13 +11,15 @@ import soundfile as sf
 from opencover.adapters.backends import AlignmentAdapter, DDSPAdapter, DiffSingerLegacyAdapter, GameAdapter, RVCAdapter, UVR5Adapter
 from opencover.audio.processing import export_audio, ffmpeg_path, guard_lyric_accompaniment, mix_tracks, normalize_input, restore_vocal_detail, validate_audio
 from opencover.core.retry_policy import chunk_sizes_for_profile, convert_with_oom_retry
-from opencover.audio.lyric_workflow import WORKFLOW_ID, level_vocal_phrases, mix_lyric_intervals
-from opencover.lyrics.processing import build_lyric_segments, parse_lyrics
+from opencover.audio.lyric_workflow import WORKFLOW_ID, level_vocal_phrases, mix_lyric_intervals, assemble_lyric_vocal
+from opencover.lyrics.processing import LyricSegment, build_lyric_segments, parse_lyrics
 from opencover.lyrics.edit_plan import changed_phrases
 from opencover.lyrics.score import character_timings_from_alignment, game_melody_for_text, midi_melody_for_text, read_game_events, lyric_text_identity, trim_segments_to_vocal_activity, transpose_note_windows, diffsinger_octave_adaptation
 from opencover.lyrics.score_contract import aligned_score, characters
 from opencover.models.schema import VoiceModel
 from opencover.pipelines.lyric_support import LyricSupport
+from opencover.pipelines.validation import cover_option_issues
+from opencover.audio.processing import audio_cache_valid
 
 @dataclass(frozen=True)
 class LyricCoverRequest:
@@ -50,8 +52,25 @@ def file_hash(path):
 def module_hash(name):
     """Works with source checkouts and PyInstaller's embedded Python modules."""
     spec=importlib.util.find_spec(name)
+    source=spec.loader.get_source(name)
+    if source is not None:
+        return hashlib.sha256(source.encode('utf-8')).hexdigest()
     code=spec.loader.get_code(name)
-    return hashlib.sha256(marshal.dumps(code)).hexdigest()
+    # marshal serializes frozensets in hash-seed order, changing cache keys
+    # between worker processes. Canonicalize nested constants in frozen builds.
+    def stable(value):
+        if isinstance(value, types.CodeType):
+            return [value.co_code.hex(), stable(value.co_consts), value.co_names,
+                    value.co_varnames, value.co_freevars, value.co_cellvars,
+                    value.co_argcount, value.co_posonlyargcount,
+                    value.co_kwonlyargcount, value.co_flags,
+                    getattr(value, 'co_exceptiontable', b'').hex()]
+        if isinstance(value, tuple):
+            return ['tuple', [stable(item) for item in value]]
+        if isinstance(value, frozenset):
+            return ['frozenset', sorted([stable(item) for item in value], key=repr)]
+        return [type(value).__name__, repr(value)]
+    return hashlib.sha256(json.dumps(stable(code),ensure_ascii=True).encode()).hexdigest()
 
 def backend_markers(root, generator='diffsinger'):
     if generator != 'diffsinger':
@@ -75,7 +94,7 @@ class LyricCoverPipeline(LyricSupport):
         self.ddsp=DDSPAdapter(base/'ddsp')
 
     def preflight(self, request):
-        issues=[]
+        issues=cover_option_issues(request.pitch, request.balance, request.output_format, request.memory_profile)
         if request.generator != 'diffsinger':
             issues.append('当前改词翻唱只支持 GAME + DiffSinger；请重新创建历史任务')
         if not request.input_path.is_file():
@@ -84,10 +103,6 @@ class LyricCoverPipeline(LyricSupport):
             issues.append('音色引擎与任务引擎不匹配')
         if request.voice is not None and (not request.voice.selectable or request.voice.quality_status == 'rejected'):
             issues.append('所选音色已停用')
-        if request.output_format.lower() not in {'wav','flac','mp3'}:
-            issues.append('输出格式必须是 WAV、FLAC 或 MP3')
-        if not -12 <= request.pitch <= 12:
-            issues.append('升降调必须在 -12 到 12 半音之间')
         if not ffmpeg_path(self.root):
             issues.append('FFmpeg 未安装')
         adapters=[self.uvr5,self.game,self.diffsinger,self.alignment]
@@ -127,7 +142,7 @@ class LyricCoverPipeline(LyricSupport):
         key=hashlib.sha256((file_hash(request.input_path)+self.uvr5.pipeline_id+models+'lyric-total-v2').encode()).hexdigest()
         cache=self.root/'workspace/cache/separation'/key
         normalized,vocals,other,total=[cache/name for name in ('input.wav','vocals.wav','other.wav','total_vocals.wav')]
-        if not all(p.is_file() for p in (normalized,vocals,other,total)):
+        if not all(audio_cache_valid(p) for p in (normalized,vocals,other,total)):
             report('normalize',8,'正在标准化输入音频')
             normalize_input(request.input_path,normalized,ffmpeg_path(self.root))
             report('separate',18,'正在使用 UVR5 分离主唱、和声与伴奏')
@@ -191,7 +206,7 @@ class LyricCoverPipeline(LyricSupport):
             if abs(len(audio)/rate-segment.duration)>.08:
                 raise RuntimeError(generator+' 输出时长与词谱相差超过 80ms，拒绝整体拉伸')
 
-    def _convert(self,request,manifest,segments,duration,job_dir,report):
+    def _convert(self,request,manifest,segments,duration,job_dir,report,reference_vocal=None):
         if request.engine=='native':
             source=job_dir/'audition/01_generated_lead.wav'
             destination=job_dir/'audition/02_converted_lead.wav'
@@ -227,7 +242,7 @@ class LyricCoverPipeline(LyricSupport):
             except (OSError,ValueError,KeyError,RuntimeError):
                 pass
         converted=[{'input':i['output'],'output':str(job_dir/'conversion'/f'phrase_{n:03d}.wav')} for n,i in enumerate(manifest)]
-        report('convert',72,'正在转换改词短句音色')
+        report('convert',72,'正在统一整条人声音色' if reference_vocal is not None else '正在转换改词短句音色')
         if request.engine=='rvc':
             batch=job_dir/'conversion/request.json'
             write_json(batch,{'model':str(model),'index':str(directory/request.voice.index_files[0]) if request.voice.index_files else '',
@@ -250,7 +265,7 @@ class LyricCoverPipeline(LyricSupport):
         if request.engine=='rvc':
             self._validate_score_generated_segments(converted,segments,request.engine.upper())
             self._stitch(converted,segments,duration,destination)
-        native=job_dir/'audition/01_generated_lead.wav'
+        native=reference_vocal or job_dir/'audition/01_generated_lead.wav'
         detailed=job_dir/'conversion/detailed.wav'
         restore_vocal_detail(destination,native,detailed,ffmpeg_path(self.root),
             detail_mix=request.voice.source_detail_mix or 0.0,detail_cutoff_hz=request.voice.source_detail_cutoff_hz or 4000,
@@ -261,6 +276,26 @@ class LyricCoverPipeline(LyricSupport):
         shutil.copy2(destination,cached)
         write_json(completed,{'sha256':file_hash(cached)})
         return destination
+
+    def _render_consistent_voice(self, request, vocals, accompaniment, native, intervals, planned, duration, job_dir, report):
+        report('convert',70,'正在合并改词与未改词演唱，全曲统一转换所选音色')
+        combined = job_dir/'audition/06_unified_source_vocal.wav'
+        assembly = assemble_lyric_vocal(vocals.parent/'total_vocals.wav',native,intervals,combined)
+        # One full vocal item loads RVC/DDSP once and keeps identical conversion
+        # settings across generated words and the preserved original performance.
+        converted = self._convert(request,[{'output':str(combined)}],
+            [LyricSegment(0,duration,'','')],duration,job_dir,report,reference_vocal=combined)
+        levelled = job_dir/'audition/05_levelled_lead.wav'
+        levels = level_vocal_phrases(converted,[(s.start,s.end) for s in planned],levelled)
+        mixed = job_dir/'audition/04_final_mix.wav'
+        gains = {}
+        report('mix',90,'正在混音：全曲使用同一音色，未改词句保留原演唱')
+        mix_tracks(levelled,accompaniment,mixed,request.balance,gain_report=gains)
+        mixing = {'workflow':'consistent_voice_v1','voice_id':request.voice.id,
+                  'voice_scope':'full vocal track','mix_gains':gains,
+                  'outside_edits':'original performance through selected voice model',
+                  'old_vocals_reintroduced':False,'review_required':False,'assembly':assembly}
+        return converted,levelled,levels,mixed,mixing
 
     def run(self,request,job_dir,progress=None):
         issues=self.preflight(request)
@@ -284,9 +319,21 @@ class LyricCoverPipeline(LyricSupport):
         write_json(job_dir/'segments.json',[s.__dict__ for s in segments])
         write_json(job_dir/'edit_intervals.json',edit_intervals)
         voice_id=request.voice.id if request.voice else 'diffsinger_native'
-        output=self.root/'workspace/outputs'/f'{request.input_path.stem}_改词_{voice_id}_{job_dir.name}.{request.output_format.lower()}'
-        if not segments:
+        job_identity=hashlib.sha256(str(job_dir.resolve()).encode('utf-8')).hexdigest()[:10]
+        output=self.root/'workspace/outputs'/f'{request.input_path.stem}_改词_{voice_id}_{job_dir.name}_{job_identity}.{request.output_format.lower()}'
+        if not segments and request.engine=='native':
             return export_audio(normalized,output,ffmpeg_path(self.root))
+        if not segments:
+            native=job_dir/'audition/01_generated_lead.wav'
+            native.parent.mkdir(parents=True,exist_ok=True)
+            sf.write(native,np.zeros(round(duration*44100),dtype='float32'),44100,subtype='FLOAT')
+            _,_,_,mixed,mixing=self._render_consistent_voice(request,vocals,accompaniment,native,[],planned,duration,job_dir,report)
+            export_audio(mixed,output,ffmpeg_path(self.root))
+            write_json(job_dir/'validation.json',{'output':str(output),'changed_segments':0,'synthesis_phrases':0,
+                'workflow':'consistent_voice_v1','mixing':mixing,'technical_validation_passed':True,
+                'voice_consistency_listening_accepted':False})
+            report('export',100,'未改词句已统一转换所选音色，请试听确认')
+            return output
         identity=file_hash(vocals)+json.dumps([s.__dict__ for s in segments],ensure_ascii=False)+backend_markers(self.root)
         identity+=''.join(file_hash(p) for p in (self._diffsinger_runner(),self._diffsinger_runner().with_name('diffsinger_score_frontend.py'),self._diffsinger_runner().with_name('game_runtime.py'),self._alignment_runner(),self._score_refiner_runner()))
         identity+=''.join(module_hash(name) for name in (__name__,'opencover.lyrics.edit_plan','opencover.lyrics.score_contract','opencover.lyrics.score','opencover.pipelines.lyric_support'))
@@ -309,21 +356,26 @@ class LyricCoverPipeline(LyricSupport):
         else:
             report('generate',65,'已校验并复用改词短句缓存')
         native=self._stitch(manifest,segments,duration,job_dir/'audition/01_generated_lead.wav')
-        converted=self._convert(request,manifest,segments,duration,job_dir,report)
-        report('level',85,'正在按演唱短句自动均衡人声音量')
-        levelled=job_dir/'audition/05_levelled_lead.wav'
-        levels=level_vocal_phrases(converted,[(s.start,s.end) for s in segments],levelled)
-        report('mix',90,'正在自动匹配全部改词边界的伴奏电平，保留未改词部分')
-        mixed=job_dir/'audition/04_final_mix.wav'
-        mixing=mix_lyric_intervals(normalized,levelled,accompaniment,edit_intervals,mixed,request.balance)
+        if request.engine in {'rvc','ddsp'}:
+            converted,levelled,levels,mixed,mixing=self._render_consistent_voice(
+                request,vocals,accompaniment,native,edit_intervals,planned,duration,job_dir,report)
+        else:
+            converted=self._convert(request,manifest,segments,duration,job_dir,report)
+            report('level',85,'正在按演唱短句自动均衡人声音量')
+            levelled=job_dir/'audition/05_levelled_lead.wav'
+            levels=level_vocal_phrases(converted,[(s.start,s.end) for s in segments],levelled)
+            report('mix',90,'正在自动匹配改词边界；原生试听保留其余原唱')
+            mixed=job_dir/'audition/04_final_mix.wav'
+            mixing=mix_lyric_intervals(normalized,levelled,accompaniment,edit_intervals,mixed,request.balance)
         lead,rate=sf.read(converted,always_2d=True,dtype='float32')
         sf.write(job_dir/'audition/03_removed_old_harmony.wav',np.zeros_like(lead),rate,subtype='PCM_16')
         export_audio(mixed,output,ffmpeg_path(self.root))
-        write_json(job_dir/'validation.json',{'generator':'GAME + DiffSinger','workflow':WORKFLOW_ID,'output':str(output),'score':str(directory/'mapped_score.json'),
+        write_json(job_dir/'validation.json',{'generator':'GAME + DiffSinger','workflow':mixing['workflow'],'output':str(output),'score':str(directory/'mapped_score.json'),
             'changed_segments':len(edit_intervals),'synthesis_phrases':len(segments),'unchanged_segments':len(planned)-len(edit_intervals),'native':str(native),
-            'old_harmony':'removed inside edit intervals','outside_edits':'original normalized audio samples',
+            'old_harmony':'removed inside edit intervals','outside_edits':mixing['outside_edits'],
             'levelled_lead':str(levelled),'loudness':levels,'mixing':mixing,
-            'technical_validation_passed':True,'pronunciation_listening_accepted':False,'melody_listening_accepted':False})
+            'technical_validation_passed':True,'pronunciation_listening_accepted':False,'melody_listening_accepted':False,
+            'voice_consistency_listening_accepted':False})
         message='已导出改词翻唱；句间响度与伴奏衔接已自动处理，请试听确认'
         if mixing['review_required']:
             message='已导出改词翻唱；部分边界缺少可靠伴奏参考或余量，请重点试听衔接'

@@ -191,7 +191,7 @@ class LyricPage(QWidget):
         super().__init__(); self.registry = registry; self.paths = paths; self.settings = settings
         page, layout = panel_layout(
             "改词翻唱",
-            "上传原曲，填写或导入新旧歌词；按原唱旋律生成改词短句，其余部分保留原曲。",
+            "上传原曲，填写或导入新旧歌词；只重唱改词句，选择音色后统一全曲声线。",
         )
         QVBoxLayout(self).addWidget(page); self.drop = AudioDropArea(); layout.addWidget(self.drop)
         self.input_player = AudioPlayer(); layout.addWidget(self.input_player)
@@ -216,7 +216,7 @@ class LyricPage(QWidget):
         for column, (label, widget) in enumerate((("升降调", self.pitch), ("混音", self.balance), ("输出", self.output_format))):
             grid.addWidget(QLabel(label), 1, column * 2); grid.addWidget(widget, 1, column * 2 + 1)
         form.addRow("生成设置", selectors)
-        self.workflow_note = QLabel("自动处理：柔化转音、均衡句间音量、平滑伴奏衔接；未改词部分保留原曲。")
+        self.workflow_note = QLabel("自动处理：均衡句间音量；选择 RVC/DDSP 后全曲统一音色，未改词句保留原演唱。原生歌声仅替换改词句，其余仍为原唱。")
         self.workflow_note.setWordWrap(True); self.workflow_note.setObjectName("Muted")
         form.addRow("", self.workflow_note)
         self._vocalparse_ready = VocalParseAdapter(paths.external_backends / 'vocalparse').status().runnable

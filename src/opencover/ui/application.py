@@ -13,7 +13,7 @@ from opencover.logging_config import configure_logging
 from opencover.paths import AppPaths
 from opencover.storage.database import Database
 from .main_window import MainWindow
-from .styles import APP_QSS
+from .theme import apply_theme
 
 
 def main() -> int:
@@ -22,7 +22,7 @@ def main() -> int:
     QCoreApplication.setApplicationName("OpenCover Studio")
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(True)
-    app.setStyle("Fusion"); app.setStyleSheet(APP_QSS)
+    apply_theme(app)
     paths = AppPaths.discover(); paths.ensure(); configure_logging(paths.workspace / "logs")
     icon_path = paths.assets / "图标.jpg"
     if icon_path.is_file():

@@ -69,7 +69,7 @@ class JobManager(QObject):
 
     def submit_original(self, payload: dict[str, object]) -> str:
         job_id = uuid.uuid4().hex
-        record = {"id": job_id, "kind": "original", **payload}
+        record = {**payload, "id": job_id, "kind": "original", "root": str(self.root)}
         return self._submit(record, "opencover.workers.original_cover_worker")
 
     def submit_preview(self, model_id: str) -> str:
@@ -103,7 +103,7 @@ class JobManager(QObject):
             raise ValueError("词谱由后台自动生成，请只提供音频和新旧歌词")
         payload = {**payload, "options": {**options, "generator": "diffsinger"}}
         job_id = uuid.uuid4().hex
-        record = {"id": job_id, "kind": "lyric", **payload}
+        record = {**payload, "id": job_id, "kind": "lyric", "root": str(self.root)}
         return self._submit(record, "opencover.workers.lyric_cover_worker")
 
     def submit_lyric_recognition(self, input_path: str) -> str:
@@ -160,6 +160,7 @@ class JobManager(QObject):
         process.readyReadStandardOutput.connect(lambda jid=job_id: self._read(jid))
         process.readyReadStandardError.connect(lambda jid=job_id: self._read_error(jid))
         process.finished.connect(lambda code, status, jid=job_id: self._done(jid, code))
+        process.errorOccurred.connect(lambda error, jid=job_id: self._process_error(jid, error))
         self.processes[job_id] = process
         self.buffers[job_id] = ""
         self.database.update_job(job_id, status="running", stage="validate")
@@ -212,7 +213,9 @@ class JobManager(QObject):
             elif event.type == "error":
                 update = {"status": "failed", "error": event.message}
             if update:
-                self.database.update_job(job_id, **update)
+                row = self.database.get_job(job_id)
+                if row and row["status"] not in {"cancelled", "failed"}:
+                    self.database.update_job(job_id, **update)
             self.event.emit(job_id, event)
 
     def _read_error(self, job_id: str) -> None:
@@ -222,14 +225,27 @@ class JobManager(QObject):
             LOG.error("worker %s stderr: %s", job_id, error)
 
     def _done(self, job_id: str, exit_code: int) -> None:
-        rows = [row for row in self.database.list_jobs() if row["id"] == job_id]
-        success = bool(rows and rows[0]["status"] == "completed" and exit_code == 0)
-        if rows and rows[0]["status"] == "running":
+        if job_id not in self.processes:
+            return
+        self._read(job_id)
+        self._read_error(job_id)
+        row = self.database.get_job(job_id)
+        success = bool(row and row["status"] == "completed" and exit_code == 0)
+        if row and (row["status"] == "running" or (row["status"] == "completed" and exit_code != 0)):
             self.database.update_job(job_id, status="failed", error=f"工作进程异常退出（{exit_code}）")
         self._append_log(job_id, "manager", f"process_exit={exit_code} success={success}\n")
-        self.finished.emit(job_id, success)
-        self.processes.pop(job_id, None)
+        process = self.processes.pop(job_id, None)
         self.buffers.pop(job_id, None)
+        if process is not None:
+            process.deleteLater()
+        self.finished.emit(job_id, success)
+
+    def _process_error(self, job_id: str, error: QProcess.ProcessError) -> None:
+        if error != QProcess.ProcessError.FailedToStart or job_id not in self.processes:
+            return
+        message = self.processes[job_id].errorString()
+        self.database.update_job(job_id, status="failed", error="工作进程无法启动：" + message)
+        self._done(job_id, -1)
 
     def _append_log(self, job_id: str, channel: str, content: str) -> None:
         if not content:

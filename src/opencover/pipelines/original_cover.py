@@ -11,6 +11,8 @@ from opencover.audio.processing import export_audio, ffmpeg_path, mix_tracks, no
 from opencover.audio.pitch import analyze_vocal_pitch, resolve_auto_pitch
 from opencover.core.retry_policy import chunk_sizes_for_profile, convert_with_oom_retry
 from opencover.models.schema import VoiceModel
+from opencover.pipelines.validation import cover_option_issues
+from opencover.audio.processing import audio_cache_valid, validate_audio
 
 
 @dataclass(frozen=True)
@@ -54,13 +56,13 @@ class OriginalCoverPipeline:
         self.msst = MSSTAdapter(root / "external_backends" / "msst")
         self.uvr5 = UVR5Adapter(
             root / "external_backends" / "uvr5",
-            root / "ffmpeg" / "ffmpeg-9.0-essentials_build" / "bin",
+            (ffmpeg_path(root) or root / "ffmpeg" / "ffmpeg.exe").parent,
         )
         self.rvc = RVCAdapter(root / "external_backends" / "rvc")
         self.ddsp = DDSPAdapter(root / "external_backends" / "ddsp")
 
     def preflight(self, request: CoverRequest) -> list[str]:
-        issues: list[str] = []
+        issues = cover_option_issues(request.pitch, request.balance, request.output_format, request.memory_profile)
         if not request.input_path.is_file():
             issues.append("输入音频不存在")
         if request.engine not in {"rvc", "ddsp"} or request.voice.engine != request.engine:
@@ -79,7 +81,7 @@ class OriginalCoverPipeline:
         if not converter.status().runnable:
             issues.append(converter.status().detail)
         model_dir = request.voice.directory(self.root / "weights")
-        if not all((model_dir / file).is_file() for file in request.voice.model_files):
+        if not request.voice.model_files or not all((model_dir / file).is_file() for file in request.voice.model_files):
             issues.append("音色权重缺失")
         if request.engine == "rvc" and not all((model_dir / file).is_file() for file in request.voice.index_files):
             issues.append("RVC 索引文件缺失")
@@ -105,12 +107,13 @@ class OriginalCoverPipeline:
             self.root / "external_backends" / "msst" / "models" / "model_vocals_mdx23c_sdr_10.17.ckpt",
         )
         checkpoint = self.root / "external_backends" / "msst" / "models" / "model_vocals_mdx23c_sdr_10.17.ckpt"
-        shared_separation = self.root / "workspace" / "cache" / "separation" / separation_cache_key(
+        separation_key = separation_cache_key(
             request, separator_artifacts, separator_id,
         )
+        shared_separation = self.root / "workspace" / "cache" / "separation" / separation_key
         cached_vocals = shared_separation / "vocals.wav"
         cached_accompaniment = shared_separation / "other.wav"
-        if all(path.is_file() and path.stat().st_size > 1024 for path in (cached_vocals, cached_accompaniment)):
+        if all(audio_cache_valid(path) for path in (cached_vocals, cached_accompaniment)):
             report("normalize", 8, "已复用标准化与分离缓存")
             report("separate", 20, "已复用人声与伴奏缓存")
             vocals, accompaniment = cached_vocals, cached_accompaniment
@@ -133,7 +136,10 @@ class OriginalCoverPipeline:
             vocals = next(separation_dir.rglob("vocals.wav"), None)
             accompaniment = next(separation_dir.rglob("other.wav"), None)
             if vocals is None or accompaniment is None:
-                raise RuntimeError("MSST 未生成预期的 vocals.wav / other.wav")
+                raise RuntimeError("分离后端未生成预期的 vocals.wav / other.wav")
+            duration = validate_audio(normalized)[2]
+            validate_audio(vocals, require_signal=True, expected_duration=duration)
+            validate_audio(accompaniment, expected_duration=duration)
             shared_separation.mkdir(parents=True, exist_ok=True)
             for source, target in ((vocals, cached_vocals), (accompaniment, cached_accompaniment)):
                 partial = target.with_suffix(target.suffix + ".part")
@@ -154,18 +160,21 @@ class OriginalCoverPipeline:
             hz = f"（中位 F0 {analysis.median_hz:.0f} Hz）" if analysis.median_hz is not None else ""
             report("pitch", 38, f"原唱音域：{detected_label}{hz}；本次升降调 {effective_pitch:+d} 半音")
         effective_request = replace(request, pitch=effective_pitch)
-        key = cache_key(effective_request, separator_id)
+        # Replacing separator weights must invalidate downstream conversion too.
+        key = cache_key(effective_request, separation_key)
         final_key = hashlib.sha256(f"{key}:{request.balance}:{request.output_format.lower()}".encode("utf-8")).hexdigest()
         extension = request.output_format.lower()
         output = self.root / "workspace" / "outputs" / f"{request.input_path.stem}_{request.voice.id}_{final_key[:10]}.{extension}"
-        if output.is_file() and output.stat().st_size > 1024:
+        duration = validate_audio(vocals, require_signal=True)[2]
+        validate_audio(accompaniment, expected_duration=duration)
+        if audio_cache_valid(output, require_signal=True, expected_duration=duration):
             report("export", 100, "已使用缓存结果")
             return output
 
         model_dir = request.voice.directory(self.root / "weights")
         model = model_dir / request.voice.model_files[0]
         conversion_cache = self.root / "workspace" / "cache" / "voice_conversion" / key / "vocal_raw.wav"
-        if conversion_cache.is_file() and conversion_cache.stat().st_size > 1024:
+        if audio_cache_valid(conversion_cache, require_signal=True, expected_duration=duration):
             report("convert", 58, "已复用音色转换缓存")
             converted_raw = conversion_cache
         else:
@@ -194,6 +203,7 @@ class OriginalCoverPipeline:
                 chunk_sizes_for_profile(request.memory_profile),
             )
             conversion_cache.parent.mkdir(parents=True, exist_ok=True)
+            validate_audio(converted_raw, require_signal=True, expected_duration=duration)
             partial = conversion_cache.with_suffix(".wav.part")
             shutil.copy2(converted_raw, partial); partial.replace(conversion_cache)
             converted_raw = conversion_cache

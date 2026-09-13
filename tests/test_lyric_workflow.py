@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from opencover.audio.lyric_workflow import level_vocal_phrases, mix_lyric_intervals
+from opencover.audio.lyric_workflow import assemble_lyric_vocal, level_vocal_phrases, mix_lyric_intervals
 from opencover.audio.processing import mix_tracks
 from opencover.workers.diffsinger_legacy_runtime import smooth_voiced_f0
 
@@ -107,3 +107,57 @@ def test_short_silent_phrase_and_invalid_intervals(tmp_path):
     assert result['phrases'][0]['gain_db']==0
     with pytest.raises(ValueError,match='重叠'):
         level_vocal_phrases(p,[(.1,.4),(.3,.5)],tmp_path/'bad.wav')
+
+
+def test_unified_vocal_preserves_performance_but_removes_all_old_words_in_edits(tmp_path):
+    rate=8000; time=np.arange(rate*3)/rate
+    old=np.column_stack([.1*np.sin(time*1200),.08*np.sin(time*1700)])
+    new=.04*np.sin(time*2500)
+    source=wav(tmp_path/'old.wav',old)
+    generated=wav(tmp_path/'new.wav',new)
+    output=tmp_path/'unified.wav'
+    report=assemble_lyric_vocal(source,generated,[(1,2)],output)
+    result,_=sf.read(output,dtype='float32',always_2d=True)
+    original,_=sf.read(source,dtype='float32',always_2d=True)
+    assert np.array_equal(result[:rate],original[:rate])
+    assert np.array_equal(result[rate*2:],original[rate*2:])
+    gain=10**(report['phrase_gains'][0]['gain_db']/20)
+    np.testing.assert_allclose(result[rate:rate*2,0],new[rate:rate*2]*gain,atol=1e-7)
+    # Original stereo harmony cannot survive in either channel of an edit.
+    np.testing.assert_array_equal(result[rate:rate*2,0],result[rate:rate*2,1])
+
+
+def test_unified_vocal_does_not_reuse_old_words_when_generation_is_silent(tmp_path):
+    source=wav(tmp_path/'old.wav',np.full(8000,.1))
+    generated=wav(tmp_path/'silent.wav',np.zeros(8000))
+    with pytest.raises(ValueError,match='缺少生成歌声'):
+        assemble_lyric_vocal(source,generated,[(0,1)],tmp_path/'out.wav')
+
+
+def test_selected_voice_converts_the_whole_performance_once(tmp_path,monkeypatch):
+    import shutil
+    from opencover.models.schema import VoiceModel
+    from opencover.pipelines.lyric_cover import LyricCoverPipeline,LyricCoverRequest
+    from opencover.lyrics.processing import LyricSegment
+    t=np.arange(24000)/8000
+    source=wav(tmp_path/'total_vocals.wav',.1*np.sin(t*1500))
+    vocals=wav(tmp_path/'vocals.wav',.1*np.sin(t*1500))
+    native=wav(tmp_path/'native.wav',.05*np.sin(t*2100))
+    bed=wav(tmp_path/'bed.wav',.05*np.sin(t*750))
+    voice=VoiceModel(id='test',display_name='Test',engine='rvc',model_files=['test.pth'])
+    request=LyricCoverRequest(source,'rvc',voice,'原词','新词')
+    pipeline=LyricCoverPipeline(tmp_path)
+    calls=[]
+    def convert(request,manifest,segments,duration,job,report,reference_vocal=None):
+        calls.append((manifest,segments,reference_vocal))
+        target=job/'audition/02_converted_lead.wav'
+        shutil.copy2(reference_vocal,target)
+        return target
+    monkeypatch.setattr(pipeline,'_convert',convert)
+    result=pipeline._render_consistent_voice(request,vocals,bed,native,[(0,1)],
+        [LyricSegment(0,1,'原','新'),LyricSegment(1,3,'词','词')],3,tmp_path,lambda *args:None)
+    assert len(calls)==1
+    assert calls[0][1][0].start==0 and calls[0][1][0].end==3
+    assert len(calls[0][0])==1
+    assert sf.info(calls[0][2]).duration==3
+    assert result[-1]['voice_scope']=='full vocal track'

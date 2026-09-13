@@ -93,6 +93,44 @@ def _channels(audio, count):
     raise ValueError('改词混音声道数量不匹配')
 
 
+def assemble_lyric_vocal(source: Path, generated: Path, intervals, output: Path) -> dict:
+    """Replace changed words before applying one voice model to the whole vocal.
+
+    Original lead/harmony performances outside edits are copied exactly. Inside
+    edits only the generated target words remain, including at the boundaries.
+    """
+    original, rate = sf.read(source, always_2d=True, dtype='float32')
+    replacement, new_rate = sf.read(generated, always_2d=True, dtype='float32')
+    if rate != new_rate or len(original) != len(replacement):
+        raise ValueError('统一音色前人声采样率与时长必须一致')
+    if not original.size or not np.isfinite(original).all() or not np.isfinite(replacement).all():
+        raise ValueError('统一音色前人声包含无效采样')
+    replacement = _channels(replacement, original.shape[1])
+    spans = _interval_frames(intervals, rate, len(original))
+    result = original.copy()
+    meter = pyln.Meter(rate)
+    levels = []
+    for a, b in spans:
+        old, new = original[a:b], replacement[a:b]
+        if float(np.max(np.abs(new))) <= 1e-7:
+            raise ValueError('改词区间缺少生成歌声，不能混回旧词')
+        pad = max(0, round(rate * .4) - len(old))
+        old_lufs = float(meter.integrated_loudness(np.pad(old, ((0, pad), (0, 0)))))
+        new_lufs = float(meter.integrated_loudness(np.pad(new, ((0, pad), (0, 0)))))
+        gain_db = float(np.clip(old_lufs - new_lufs, -18, 18)) if np.isfinite([old_lufs, new_lufs]).all() else 0.0
+        # Match at phrase level; do not follow individual syllable envelopes.
+        gain = min(10 ** (gain_db / 20), .98 / float(np.max(np.abs(new))))
+        result[a:b] = new * gain
+        levels.append({'start': a / rate, 'end': b / rate, 'gain_db': float(20*np.log10(gain))})
+    output.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(output, result, rate, subtype='FLOAT')
+    report = {'source': str(source), 'assembled': str(output),
+              'outside_edits': 'original vocal samples before voice conversion',
+              'old_vocals_inside_edits': 'removed', 'phrase_gains': levels}
+    _write_report(output.with_suffix('.assembly.json'), report)
+    return report
+
+
 def mix_lyric_intervals(source: Path, vocal: Path, accompaniment: Path, intervals,
                         output: Path, balance: str = '均衡') -> dict:
     """C1 boundary correction on every edit, with original gaps kept bit exact."""
