@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -165,14 +166,38 @@ def restore_vocal_detail(
     return target
 
 
-def validate_audio(path: Path) -> tuple[int, int, float]:
+def validate_audio(path: Path, *, require_signal: bool = False, expected_duration: float | None = None) -> tuple[int, int, float]:
     try:
         info = sf.info(path)
-    except RuntimeError as exc:
+    except (OSError, RuntimeError) as exc:
         raise AudioError("无法读取音频") from exc
     if info.frames <= 0 or info.samplerate < 8000 or info.channels not in {1, 2}:
         raise AudioError("音频参数不受支持")
+    if expected_duration is not None and abs(info.duration - expected_duration) > 0.1:
+        raise AudioError("音频输出时长与输入不一致")
+    peak = 0.0
+    frames = 0
+    try:
+        for block in sf.blocks(path, blocksize=65536, dtype="float32", always_2d=True):
+            if not np.isfinite(block).all():
+                raise AudioError("音频包含无效采样值")
+            frames += len(block)
+            peak = max(peak, float(np.max(np.abs(block))))
+    except (OSError, RuntimeError) as exc:
+        raise AudioError("音频数据损坏或无法完整解码") from exc
+    if frames != info.frames:
+        raise AudioError("音频数据不完整")
+    if require_signal and peak <= 1e-7:
+        raise AudioError("音频输出为静音")
     return info.samplerate, info.channels, info.duration
+
+
+def audio_cache_valid(path: Path, *, require_signal: bool = False, expected_duration: float | None = None) -> bool:
+    try:
+        validate_audio(path, require_signal=require_signal, expected_duration=expected_duration)
+        return True
+    except (OSError, RuntimeError, ValueError):
+        return False
 
 
 def guard_lyric_accompaniment(
@@ -291,7 +316,7 @@ def compare_vocal_rhythm(source_path: Path, candidate_path: Path, *, points: int
     return RhythmComparison(score, envelope_correlation, onset_correlation, reliable)
 
 
-def mix_tracks(vocal_path: Path, accompaniment_path: Path, output: Path, balance: str = "均衡") -> Path:
+def mix_tracks(vocal_path: Path, accompaniment_path: Path, output: Path, balance: str = "均衡", *, gain_report: dict | None = None) -> Path:
     vocal, sr_v = sf.read(vocal_path, always_2d=True, dtype="float32")
     accompaniment, sr_a = sf.read(accompaniment_path, always_2d=True, dtype="float32")
     if sr_v != sr_a:
@@ -307,19 +332,26 @@ def mix_tracks(vocal_path: Path, accompaniment_path: Path, output: Path, balance
     gains = {"人声更突出": (1.0, 0.70), "均衡": (0.92, 0.82), "伴奏更突出": (0.72, 1.0)}
     vocal_gain, accompaniment_gain = gains.get(balance, gains["均衡"])
     meter = pyln.Meter(sr_v)
+    vocal_normalization = accompaniment_normalization = 1.0
     try:
         vocal_lufs = meter.integrated_loudness(vocal)
         accompaniment_lufs = meter.integrated_loudness(accompaniment)
         if np.isfinite(vocal_lufs):
-            vocal *= 10.0 ** ((-18.0 - vocal_lufs) / 20.0)
+            vocal_normalization = 10.0 ** ((-18.0 - vocal_lufs) / 20.0)
+            vocal *= vocal_normalization
         if np.isfinite(accompaniment_lufs):
-            accompaniment *= 10.0 ** ((-20.0 - accompaniment_lufs) / 20.0)
+            accompaniment_normalization = 10.0 ** ((-20.0 - accompaniment_lufs) / 20.0)
+            accompaniment *= accompaniment_normalization
     except (ValueError, OverflowError):
         pass
     mixed = vocal * vocal_gain + accompaniment * accompaniment_gain
     peak = float(np.max(np.abs(mixed))) if mixed.size else 0.0
     if peak > 0.98:
         mixed *= 0.98 / peak
+    if gain_report is not None:
+        limiter = min(1.0, 0.98 / max(peak, 1e-12))
+        gain_report.update(vocal_gain=vocal_gain * vocal_normalization * limiter,
+                           accompaniment_gain=accompaniment_gain * accompaniment_normalization * limiter)
     output.parent.mkdir(parents=True, exist_ok=True)
     sf.write(output, mixed, sr_v, subtype="PCM_24")
     validate_audio(output)
@@ -328,7 +360,22 @@ def mix_tracks(vocal_path: Path, accompaniment_path: Path, output: Path, balance
 
 def export_audio(source: Path, target: Path, ffmpeg: Path) -> Path:
     """Export a verified WAV mix without ever replacing the user's input."""
+    if source.resolve() == target.resolve():
+        raise AudioError("导出路径不能覆盖输入音频")
+    _, _, duration = validate_audio(source)
     target.parent.mkdir(parents=True, exist_ok=True)
+    destination = target
+    target = target.with_name(f".{target.stem}.{uuid.uuid4().hex}.part{target.suffix}")
+    try:
+        _export_audio_file(source, target, ffmpeg)
+        validate_audio(target, expected_duration=duration)
+        target.replace(destination)
+    finally:
+        target.unlink(missing_ok=True)
+    return destination
+
+
+def _export_audio_file(source: Path, target: Path, ffmpeg: Path) -> None:
     if target.suffix.lower() == ".wav":
         shutil.copy2(source, target)
     else:
@@ -342,5 +389,3 @@ def export_audio(source: Path, target: Path, ffmpeg: Path) -> Path:
         )
         if result.returncode:
             raise AudioError(result.stderr.strip() or "FFmpeg 导出失败")
-    validate_audio(target)
-    return target

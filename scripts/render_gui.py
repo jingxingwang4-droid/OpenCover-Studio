@@ -14,7 +14,7 @@ from opencover.core.hardware_detector import detect_hardware
 from opencover.paths import AppPaths
 from opencover.storage.database import Database
 from opencover.ui.main_window import MainWindow
-from opencover.ui.styles import APP_QSS
+from opencover.ui.theme import apply_theme
 
 
 def main() -> int:
@@ -22,7 +22,7 @@ def main() -> int:
     parser.add_argument("--page", default="首页")
     parser.add_argument("--output", default="gui-page.png")
     args = parser.parse_args()
-    app = QApplication([]); app.setStyle("Fusion"); app.setStyleSheet(APP_QSS)
+    app = QApplication([]); apply_theme(app)
     paths = AppPaths.discover(); paths.ensure()
     ffmpeg = next(paths.ffmpeg.glob("*/bin/ffmpeg.exe"), None)
     runtime = paths.external_backends / "rvc" / "runtime" / "Scripts" / "python.exe"

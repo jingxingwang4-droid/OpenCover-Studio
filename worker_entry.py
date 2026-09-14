@@ -25,10 +25,14 @@ def main() -> int:
         from opencover.workers.preview_worker import main as worker_main
     elif kind == "lyric":
         from opencover.workers.lyric_cover_worker import main as worker_main
+    elif kind == "lyric_recognition":
+        from opencover.workers.lyric_recognition_worker import main as worker_main
     elif kind == "original":
         from opencover.workers.original_cover_worker import main as worker_main
     elif kind == "resource":
         from opencover.workers.resource_worker import main as worker_main
+    elif kind == "training":
+        from opencover.workers.voice_training_worker import main as worker_main
     else:
         emit_error("BAD_KIND", f"未知任务类型：{kind}")
         return 2

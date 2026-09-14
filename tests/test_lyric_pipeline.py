@@ -13,9 +13,10 @@ from opencover.models.schema import VoiceModel
 from opencover.pipelines.lyric_cover import (
     LyricCoverPipeline, LyricCoverRequest, backend_markers, character_timings_from_alignment,
     game_melody_for_text,
-    select_initial_generator, trim_segments_to_vocal_activity, transpose_note_windows,
+    trim_segments_to_vocal_activity, transpose_note_windows,
     diffsinger_octave_adaptation,
 )
+from opencover.pipelines.legacy_lyric_cover import select_initial_generator, LyricCoverPipeline as LegacyPipeline
 from opencover.workers.diffsinger_legacy_runtime import _score_constrained_f0
 from opencover.workers.espnet_visinger2_runtime import expand_score_windows, note_name_to_midi
 from opencover.workers.score_refinement_runtime import refine_events
@@ -80,6 +81,53 @@ def test_stitch_places_real_generated_segments_at_timestamps(tmp_path: Path) -> 
     assert np.max(np.abs(audio[:40000])) == 0
     assert np.max(np.abs(audio[45000:85000])) > 0.1
     assert np.max(np.abs(audio[90000:])) == 0
+
+
+def test_pipeline_refines_only_dense_rewrites_on_original_word_gaps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipeline = LyricCoverPipeline(tmp_path)
+    vocals = tmp_path / "vocals.wav"
+    sf.write(vocals, np.full(8000, 0.1, dtype=np.float32), 1000)
+    unchanged = LyricSegment(0.0, 2.0, "原词不变", "原词不变")
+    dense = LyricSegment(2.0, 8.0, "春夏秋冬东西南北", "甲乙丙丁戊己庚辛")
+
+    def fake_align(request_path: Path, runner: Path) -> None:
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        words = [
+            {"word": character, "start": 0.1 + index * 0.7, "end": 0.6 + index * 0.7}
+            for index, character in enumerate(dense.original_text)
+        ]
+        Path(request["output_path"]).write_text(json.dumps({
+            "items": [{"segments": [{"words": words}]}],
+        }), encoding="utf-8")
+
+    monkeypatch.setattr(pipeline.alignment, "align", fake_align)
+    progress: list[str] = []
+    pipeline.__class__ = LegacyPipeline
+    planned = pipeline._refine_dense_rewrites(
+        vocals, [unchanged, dense], tmp_path / "job",
+        lambda stage, value, message: progress.append(message),
+    )
+
+    assert planned[0] == unchanged
+    dense_parts = planned[1:]
+    assert len(dense_parts) > 1
+    assert "".join(item.original_text for item in dense_parts) == dense.original_text
+    assert "".join(item.new_text for item in dense_parts) == dense.new_text
+    assert all(item.character_timings for item in dense_parts)
+    assert all(left.end == right.start for left, right in zip(dense_parts, dense_parts[1:]))
+    assert any("原唱字间隙" in message for message in progress)
+
+
+def test_extract_segments_keeps_full_parent_prompt_for_dense_children(tmp_path: Path) -> None:
+    pipeline = LyricCoverPipeline(tmp_path)
+    vocals = tmp_path / "vocals.wav"
+    sf.write(vocals, np.linspace(-0.2, 0.2, 8000, dtype=np.float32), 1000)
+    segment = LyricSegment(2.0, 3.0, "原词", "新词", None, 1.0, 5.0, "完整原唱")
+    item = pipeline._extract_segments(vocals, [segment], tmp_path / "segments")[0]
+    assert sf.info(item["input"]).duration == pytest.approx(1.0)
+    assert sf.info(item["prompt_input"]).duration == pytest.approx(4.0)
 
 
 def test_game_notes_are_mapped_to_chinese_diffsinger_windows(tmp_path: Path) -> None:
@@ -193,6 +241,31 @@ def test_lrc_interval_is_trimmed_to_actual_vocal_activity(tmp_path: Path) -> Non
     assert 3.0 <= result[0].end <= 3.10
 
 
+
+def test_vocal_trim_keeps_quiet_trailing_words_after_loud_singing(tmp_path: Path) -> None:
+    rate = 1000
+    audio = np.zeros(rate * 10, dtype=np.float32)
+    audio[rate:rate * 4] = 0.25
+    audio[rate * 4:rate * 8] = 0.025
+    vocals = tmp_path / "vocals.wav"
+    sf.write(vocals, audio, rate)
+    result = trim_segments_to_vocal_activity(
+        [LyricSegment(0.0, 10.0, "original", "replacement")], vocals,
+    )
+    assert result[0].end >= 8.0
+
+
+def test_vocal_trim_does_not_absorb_next_phrase_after_long_silence(tmp_path: Path) -> None:
+    rate = 1000
+    audio = np.zeros(rate * 10, dtype=np.float32)
+    audio[rate:rate * 4] = 0.2
+    audio[rate * 8:rate * 9] = 0.2
+    vocals = tmp_path / "vocals.wav"
+    sf.write(vocals, audio, rate)
+    result = trim_segments_to_vocal_activity(
+        [LyricSegment(0.0, 10.0, "first phrase", "first phrase")], vocals,
+    )
+    assert 3.95 <= result[0].end <= 4.10
 def test_diffsinger_vocoder_f0_is_constrained_to_score() -> None:
     # A2 requested but the legacy pitch extractor jumps to A4.  The score must
     # win; small non-octave movement is retained and unvoiced frames stay zero.
@@ -218,10 +291,22 @@ def test_lyric_preflight_rejects_unknown_generator(tmp_path: Path) -> None:
     source.write_bytes(b"audio")
     voice = VoiceModel(id="voice", display_name="Voice", engine="rvc", model_files=["model.pth"])
     request = LyricCoverRequest(source, "rvc", voice, "原词", "新词", generator="unknown")
-    assert "未知改词生成器：unknown" in LyricCoverPipeline(tmp_path).preflight(request)
+    assert "当前改词翻唱只支持 GAME + DiffSinger；请重新创建历史任务" in LyricCoverPipeline(tmp_path).preflight(request)
+
+
+def test_lyric_preflight_requires_human_review_before_generation(tmp_path: Path) -> None:
+    source = tmp_path / "input.wav"
+    source.write_bytes(b"audio")
+    voice = VoiceModel(id="voice", display_name="Voice", engine="rvc", model_files=["model.pth"])
+    manual = LyricCoverRequest(source, "rvc", voice, "", "新词")
+    automatic = LyricCoverRequest(source, "rvc", voice, "识别原词", "新词", auto_recognize_lyrics=True)
+    assert "原歌词不能为空" in "；".join(LyricCoverPipeline(tmp_path).preflight(manual))
+    issues = "；".join(LyricCoverPipeline(tmp_path).preflight(automatic))
+    assert "VocalParse" in issues
+    assert "不能在生成阶段自动识别" in issues
 
 
 def test_generation_marker_tolerates_missing_optional_backend_markers(tmp_path: Path) -> None:
-    for name in ("espnet_visinger2", "vevo2", "game", "diffsinger", "alignment"):
+    for name in ("soulx_singer", "alignment"):
         (tmp_path / "external_backends" / name).mkdir(parents=True)
-    assert backend_markers(tmp_path) == "espnet_visinger2:missing\nvevo2:missing\ngame:missing\ndiffsinger:missing\nalignment:missing"
+    assert backend_markers(tmp_path) == "game:missing\ndiffsinger:missing\nalignment:missing\nuvr5:missing"

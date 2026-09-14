@@ -56,11 +56,13 @@ def run_checked(
 
 
 def run_checked_streaming(
-    args: list[str], cwd: Path, on_stdout_line: Callable[[str], None] | None = None, timeout: int = 3600,
+    args: list[str], cwd: Path, on_stdout_line: Callable[[str], None] | None = None,
+    timeout: int = 3600, env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a backend while forwarding complete stdout lines without pipe deadlocks."""
     process = subprocess.Popen(
         args, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False,
+        env=env,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     messages: queue.Queue[tuple[str, bytes]] = queue.Queue()

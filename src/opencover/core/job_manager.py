@@ -13,7 +13,6 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 
 from opencover.storage.database import Database
-from opencover.lyrics.midi import load_midi
 from opencover.models.registry import ModelRegistry
 from opencover.adapters.base import _decode_output
 from .worker_protocol import WorkerEvent
@@ -22,21 +21,37 @@ LOG = logging.getLogger(__name__)
 
 
 def snapshot_lyric_midi(record: dict[str, object], job_dir: Path) -> dict[str, object]:
-    """Copy an uploaded score into the immutable job directory."""
+    """Preserve score attachments when importing historical task records."""
     if record.get("kind") != "lyric" or not isinstance(record.get("options"), dict):
         return record
     options = dict(record["options"])
-    midi_value = str(options.get("midi_path", "")).strip()
-    if not midi_value:
-        return record
-    source_midi = Path(midi_value)
-    if not source_midi.is_file():
-        raise FileNotFoundError("MIDI 文件已被移动或删除，请重新上传")
-    load_midi(source_midi)
-    target_midi = job_dir / ("melody" + source_midi.suffix.lower())
-    shutil.copy2(source_midi, target_midi)
-    options["midi_path"] = str(target_midi)
-    options["midi_original_name"] = source_midi.name
+    if options.get("midi_path"):
+        from opencover.lyrics.midi import load_midi
+        source = Path(str(options["midi_path"]))
+        load_midi(source)
+        target = job_dir / "melody.mid"
+        shutil.copy2(source, target)
+        options.update(midi_path=str(target), midi_original_name=source.name)
+    for key, target_name in (
+        ("soulx_prompt_metadata_path", "soulx_prompt.json"),
+        ("soulx_target_metadata_path", "soulx_target.json"),
+    ):
+        value = str(options.get(key, "")).strip()
+        if not value:
+            continue
+        source = Path(value)
+        if not source.is_file():
+            raise FileNotFoundError(f"SoulX metadata 已被移动或删除：{source.name}")
+        if source.stat().st_size > 2 * 1024 * 1024:
+            raise ValueError("SoulX metadata 不能超过 2 MiB")
+        try:
+            json.loads(source.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"SoulX metadata 不是有效的 UTF-8 JSON：{source.name}") from exc
+        target = job_dir / target_name
+        shutil.copy2(source, target)
+        options[key] = str(target)
+        options[key.replace("_path", "_original_name")] = source.name
     return {**record, "options": options}
 
 
@@ -54,8 +69,16 @@ class JobManager(QObject):
 
     def submit_original(self, payload: dict[str, object]) -> str:
         job_id = uuid.uuid4().hex
-        record = {"id": job_id, "kind": "original", **payload}
+        record = {**payload, "id": job_id, "kind": "original", "root": str(self.root)}
         return self._submit(record, "opencover.workers.original_cover_worker")
+
+    def submit_training(self, payload: dict[str, object]) -> str:
+        from opencover.pipelines.voice_training import VoiceTrainingPipeline
+        if self.running():
+            raise RuntimeError("请等待当前任务结束后再开始训练")
+        VoiceTrainingPipeline(self.root).preflight(Path(str(payload["input_path"])), payload.get("options", {}))
+        record = {**payload, "id": uuid.uuid4().hex, "kind": "training", "root": str(self.root), "engine": "rvc", "model_id": "training"}
+        return self._submit(record, "opencover.workers.voice_training_worker")
 
     def submit_preview(self, model_id: str) -> str:
         model = ModelRegistry(self.root / "weights").get(model_id)
@@ -81,9 +104,26 @@ class JobManager(QObject):
         return self._submit(record, "opencover.workers.preview_worker")
 
     def submit_lyric(self, payload: dict[str, object]) -> str:
+        options = payload.get("options", {})
+        if not isinstance(options, dict) or options.get("generator", "diffsinger") != "diffsinger":
+            raise ValueError("当前改词翻唱只支持 GAME + DiffSinger，请重新创建历史任务")
+        if any(options.get(key) for key in ("midi_path", "soulx_prompt_metadata_path", "soulx_target_metadata_path")):
+            raise ValueError("词谱由后台自动生成，请只提供音频和新旧歌词")
+        payload = {**payload, "options": {**options, "generator": "diffsinger"}}
         job_id = uuid.uuid4().hex
-        record = {"id": job_id, "kind": "lyric", **payload}
+        record = {**payload, "id": job_id, "kind": "lyric", "root": str(self.root)}
         return self._submit(record, "opencover.workers.lyric_cover_worker")
+
+    def submit_lyric_recognition(self, input_path: str) -> str:
+        job_id = uuid.uuid4().hex
+        record = {
+            "id": job_id, "kind": "lyric_recognition", "root": str(self.root),
+            "input_path": input_path, "engine": "vocalparse", "model_id": "vocalparse",
+            "options": {},
+        }
+        return self._submit(
+            record, "opencover.workers.lyric_recognition_worker",
+        )
 
     def submit_resource(self, resource_id: str, *, install: bool = True) -> str:
         job_id = uuid.uuid4().hex
@@ -120,10 +160,15 @@ class JobManager(QObject):
         environment = QProcessEnvironment.systemEnvironment()
         source_dir = str(self.root / "src")
         environment.insert("PYTHONPATH", source_dir + os.pathsep + environment.value("PYTHONPATH"))
+        process_temp = self.root / "workspace" / "tmp" / "worker_processes"
+        process_temp.mkdir(parents=True, exist_ok=True)
+        environment.insert("TEMP", str(process_temp))
+        environment.insert("TMP", str(process_temp))
         process.setProcessEnvironment(environment)
         process.readyReadStandardOutput.connect(lambda jid=job_id: self._read(jid))
         process.readyReadStandardError.connect(lambda jid=job_id: self._read_error(jid))
         process.finished.connect(lambda code, status, jid=job_id: self._done(jid, code))
+        process.errorOccurred.connect(lambda error, jid=job_id: self._process_error(jid, error))
         self.processes[job_id] = process
         self.buffers[job_id] = ""
         self.database.update_job(job_id, status="running", stage="validate")
@@ -176,7 +221,9 @@ class JobManager(QObject):
             elif event.type == "error":
                 update = {"status": "failed", "error": event.message}
             if update:
-                self.database.update_job(job_id, **update)
+                row = self.database.get_job(job_id)
+                if row and row["status"] not in {"cancelled", "failed"}:
+                    self.database.update_job(job_id, **update)
             self.event.emit(job_id, event)
 
     def _read_error(self, job_id: str) -> None:
@@ -186,14 +233,27 @@ class JobManager(QObject):
             LOG.error("worker %s stderr: %s", job_id, error)
 
     def _done(self, job_id: str, exit_code: int) -> None:
-        rows = [row for row in self.database.list_jobs() if row["id"] == job_id]
-        success = bool(rows and rows[0]["status"] == "completed" and exit_code == 0)
-        if rows and rows[0]["status"] == "running":
+        if job_id not in self.processes:
+            return
+        self._read(job_id)
+        self._read_error(job_id)
+        row = self.database.get_job(job_id)
+        success = bool(row and row["status"] == "completed" and exit_code == 0)
+        if row and (row["status"] == "running" or (row["status"] == "completed" and exit_code != 0)):
             self.database.update_job(job_id, status="failed", error=f"工作进程异常退出（{exit_code}）")
         self._append_log(job_id, "manager", f"process_exit={exit_code} success={success}\n")
-        self.finished.emit(job_id, success)
-        self.processes.pop(job_id, None)
+        process = self.processes.pop(job_id, None)
         self.buffers.pop(job_id, None)
+        if process is not None:
+            process.deleteLater()
+        self.finished.emit(job_id, success)
+
+    def _process_error(self, job_id: str, error: QProcess.ProcessError) -> None:
+        if error != QProcess.ProcessError.FailedToStart or job_id not in self.processes:
+            return
+        message = self.processes[job_id].errorString()
+        self.database.update_job(job_id, status="failed", error="工作进程无法启动：" + message)
+        self._done(job_id, -1)
 
     def _append_log(self, job_id: str, channel: str, content: str) -> None:
         if not content:

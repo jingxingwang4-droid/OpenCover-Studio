@@ -13,7 +13,7 @@ from opencover.logging_config import configure_logging
 from opencover.paths import AppPaths
 from opencover.storage.database import Database
 from .main_window import MainWindow
-from .styles import APP_QSS
+from .theme import apply_theme
 
 
 def main() -> int:
@@ -22,7 +22,7 @@ def main() -> int:
     QCoreApplication.setApplicationName("OpenCover Studio")
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(True)
-    app.setStyle("Fusion"); app.setStyleSheet(APP_QSS)
+    apply_theme(app)
     paths = AppPaths.discover(); paths.ensure(); configure_logging(paths.workspace / "logs")
     icon_path = paths.assets / "图标.jpg"
     if icon_path.is_file():
@@ -32,8 +32,9 @@ def main() -> int:
     if not local_ffmpeg.exists():
         local_ffmpeg = next(paths.ffmpeg.glob("*/bin/ffmpeg.exe"), local_ffmpeg)
     runtimes = [
-        paths.external_backends / name / "runtime" / "Scripts" / "python.exe"
-        for name in ("rvc", "ddsp", "vevo2")
+        paths.external_backends / name / "runtime" / suffix
+        for name in ("rvc", "ddsp")
+        for suffix in ("python.exe", "Scripts/python.exe")
     ]
     torch_python = next((runtime for runtime in runtimes if runtime.is_file()), None)
     hardware = detect_hardware(
