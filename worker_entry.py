@@ -31,6 +31,8 @@ def main() -> int:
         from opencover.workers.original_cover_worker import main as worker_main
     elif kind == "resource":
         from opencover.workers.resource_worker import main as worker_main
+    elif kind == "training":
+        from opencover.workers.voice_training_worker import main as worker_main
     else:
         emit_error("BAD_KIND", f"未知任务类型：{kind}")
         return 2

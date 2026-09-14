@@ -45,6 +45,8 @@ def dispatch() -> int:
             from opencover.workers.preview_worker import main as worker_main
         elif request.get("kind") == "lyric":
             from opencover.workers.lyric_cover_worker import main as worker_main
+        elif request.get("kind") == "training":
+            from opencover.workers.voice_training_worker import main as worker_main
         else:
             from opencover.workers.original_cover_worker import main as worker_main
 

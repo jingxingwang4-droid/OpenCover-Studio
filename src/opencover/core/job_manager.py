@@ -72,6 +72,14 @@ class JobManager(QObject):
         record = {**payload, "id": job_id, "kind": "original", "root": str(self.root)}
         return self._submit(record, "opencover.workers.original_cover_worker")
 
+    def submit_training(self, payload: dict[str, object]) -> str:
+        from opencover.pipelines.voice_training import VoiceTrainingPipeline
+        if self.running():
+            raise RuntimeError("请等待当前任务结束后再开始训练")
+        VoiceTrainingPipeline(self.root).preflight(Path(str(payload["input_path"])), payload.get("options", {}))
+        record = {**payload, "id": uuid.uuid4().hex, "kind": "training", "root": str(self.root), "engine": "rvc", "model_id": "training"}
+        return self._submit(record, "opencover.workers.voice_training_worker")
+
     def submit_preview(self, model_id: str) -> str:
         model = ModelRegistry(self.root / "weights").get(model_id)
         if model is None:

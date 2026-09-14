@@ -29,9 +29,10 @@ from opencover.models.registry import ModelRegistry
 from opencover.paths import AppPaths
 from opencover.storage.database import Database
 from .widgets import AudioDropArea, AudioPlayer, VoiceCard
+from .training_page import TrainingPage
 
 
-NAV_ITEMS = ["首页", "原词翻唱", "改词翻唱 Beta", "音色管理", "任务记录", "组件管理", "设置"]
+NAV_ITEMS = ["首页", "原词翻唱", "改词翻唱 Beta", "音色管理", "音色训练", "任务记录", "组件管理", "设置"]
 
 
 def panel_layout(title: str, subtitle: str = "") -> tuple[QWidget, QVBoxLayout]:
@@ -633,7 +634,7 @@ class HistoryPage(QWidget):
     def refresh(self) -> None:
         rows = self.database.list_jobs(); self.table.setRowCount(len(rows))
         for r, job in enumerate(rows):
-            kinds = {"original": "原词", "lyric": "改词", "preview": "试听"}
+            kinds = {"original": "原词", "lyric": "改词", "preview": "试听", "training": "音色训练"}
             model = self.registry.get(str(job["model_id"]))
             voice_name = model.display_name if model else str(job["model_id"])
             values = [Path(str(job["input_path"])).name, kinds.get(str(job["kind"]), job["kind"]), job["engine"], voice_name, job["status"], f"{job['progress']}%", str(job["created_at"])[:19].replace("T", " "), job["output_path"] or "—"]
@@ -805,6 +806,7 @@ class MainWindow(QMainWindow):
         self.jobs.event.connect(self._job_event)
         self.jobs.finished.connect(self._job_finished)
         pages = {"首页": home, "原词翻唱": cover, "改词翻唱 Beta": lyric, "音色管理": voices, "任务记录": history, "组件管理": ComponentPage(self.paths, self.jobs, self.database, not self.private_edition), "设置": SettingsPage(self.app_settings, self.hardware, self.paths.workspace / "settings.json")}
+        pages["音色训练"] = TrainingPage(self.paths.root, self.jobs)
         for name, page in pages.items(): self.pages[name] = page; self.stack.addWidget(page)
 
     def navigate(self, name: str) -> None:
@@ -865,6 +867,12 @@ class MainWindow(QMainWindow):
             install = bool(options.get("install", True)) if isinstance(options, dict) else True
             job_id = self.jobs.submit_resource(str(payload["input_path"]), install=install)
             QMessageBox.information(self, "资源任务已创建", f"任务 {job_id[:8]} 已重新启动。")
+            self.navigate("任务记录")
+        elif kind == "training":
+            try:
+                self.jobs.submit_training(payload)
+            except Exception as exc:
+                QMessageBox.warning(self, "无法开始训练", str(exc)); return
             self.navigate("任务记录")
         else:
             QMessageBox.warning(self, "无法重新生成", f"不支持的历史任务类型：{kind or '未知'}")

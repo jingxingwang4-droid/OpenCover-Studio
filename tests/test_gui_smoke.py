@@ -29,7 +29,7 @@ def test_main_window_constructs(qtbot, tmp_path: Path) -> None:  # type: ignore[
     assert window.jobs.recovered_jobs == 1
     assert "rgba(248, 249, 247, 174)" in window.stack.styleSheet()
     assert database.get_job("interrupted")["status"] == "failed"
-    assert set(window.pages) == {"首页", "原词翻唱", "改词翻唱 Beta", "音色管理", "任务记录", "组件管理", "设置"}
+    assert set(window.pages) == {"首页", "原词翻唱", "改词翻唱 Beta", "音色管理", "音色训练", "任务记录", "组件管理", "设置"}
     history = window.pages["任务记录"]
     labels = {button.text() for button in history.findChildren(QPushButton)}
     assert {"重新生成", "更换音色生成"} <= labels

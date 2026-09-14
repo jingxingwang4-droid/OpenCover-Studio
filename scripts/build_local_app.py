@@ -22,7 +22,8 @@ def main():
     os.environ['PYTHONUTF8'] = '1'
     os.environ['PYINSTALLER_CONFIG_DIR'] = str(work / 'pyinstaller_cache')
     runtimes = ['diffsinger_legacy_runtime.py', 'diffsinger_score_frontend.py', 'game_runtime.py',
-                'alignment_runtime.py', 'score_refinement_runtime.py', 'rvc_batch_runtime.py', 'vocalparse_runtime.py']
+                'alignment_runtime.py', 'score_refinement_runtime.py', 'rvc_batch_runtime.py', 'vocalparse_runtime.py',
+                'rvc_training_runtime.py']
     common = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--paths', str(root/'src'),
               '--specpath', str(work/'spec'), '--distpath', str(work/'dist')]
     for name in runtimes:
